@@ -1,6 +1,8 @@
 name: astrbot_plugin_interlude
 display_name: Interlude 持续生活叙事
-desc: 持久化角色故事、延迟回复与有边界的主动联系
+short_desc: 有时间感与长期记忆的 AstrBot 持续生活角色
+desc: 持久化角色故事、长期记忆、关系演化、日程、延迟回复与有边界的主动联系
 version: v1.0.0
-author: Interlude contributors
+author: wedfkewn
+repo: https://github.com/wedfkewn/astrbot_plugin_interlude
 astrbot_version: ">=4.24,<5"

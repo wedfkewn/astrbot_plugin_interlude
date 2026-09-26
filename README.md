@@ -1,4 +1,12 @@
-# Interlude for AstrBot
+# astrbot_plugin_interlude
+
+AstrBot 持续生活叙事角色插件 / A persistent narrative character plugin for AstrBot.
+
+## Supports
+
+- [AstrBot 项目](https://github.com/AstrBotDevs/AstrBot)
+- [AstrBot 插件开发文档（中文）](https://docs.astrbot.app/dev/star/plugin-new.html)
+- [AstrBot Plugin Development Guide (English)](https://docs.astrbot.app/en/dev/star/plugin-new.html)
 
 Interlude is a persistent character runtime for AstrBot 4.24.x–4.x and Python 3.12+. It stores a canonical story separately from AstrBot conversation history. Private messages enter a per-story event router, are merged within a short window, and go through a structured narrative decision. A reply may be immediate, delayed, or absent. The SQLite database survives AstrBot restarts.
 
