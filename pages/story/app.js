@@ -3,6 +3,8 @@ await bridge.ready();
 const selector = document.getElementById('story');
 const content = document.getElementById('content');
 const view = content.dataset.view;
+const backupPreview = document.getElementById('backup-preview');
+const backupFile = document.getElementById('backup-file');
 let timeZone = 'Asia/Shanghai';
 function formatTime(value) {
   if (!value) return '';
@@ -61,11 +63,82 @@ function addAction(box, label, action, itemId = '') {
   });
   box.append(button);
 }
-async function refresh() {
+function backupMessage(text) {
+  backupPreview.replaceChildren(node('p', 'empty', text));
+}
+
+document.getElementById('backup-export').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  const storyId = selector.value;
+  if (!storyId) return;
+  button.disabled = true;
+  try {
+    const backup = await bridge.apiGet('backup/export', {story_id: storyId});
+    if (backup.error) throw new Error(backup.error);
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `interlude-${storyId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)}-${Date.now()}.json`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    backupMessage(`已导出故事「${storyId}」。`);
+  } catch (error) { backupMessage(`导出失败：${error.message}`); }
+  finally { button.disabled = false; }
+});
+
+backupFile.addEventListener('change', () => backupPreview.replaceChildren());
+document.getElementById('backup-preview-button').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  const file = backupFile.files?.[0];
+  if (!file) { backupMessage('请先选择 JSON 备份文件。'); return; }
+  if (file.size > 20 * 1024 * 1024) { backupMessage('备份文件不能超过 20 MiB。'); return; }
+  button.disabled = true;
+  backupMessage('正在检查备份…');
+  try {
+    const preview = await bridge.upload('backup/preview', file);
+    if (preview.error) throw new Error(preview.error);
+    const panel = node('div', 'backup-preview');
+    panel.append(
+      node('p', '', `备份故事：${preview.story_id}`),
+      node('p', '', `导出时间：${formatTime(preview.exported_at)}`),
+      node('p', '', `记录：事件 ${preview.counts.story_entries}、记忆 ${preview.counts.facts}、参与者 ${preview.counts.participants}、日程 ${preview.counts.schedules}`),
+      node('p', '', preview.exists ? '恢复将覆盖同名故事的现有数据。' : '恢复将重新创建已删除的故事。'),
+      node('p', '', '旧备份中的待发送任务会取消。输入 CONFIRM 后才能恢复；预览在 5 分钟后失效。'),
+    );
+    const input = document.createElement('input');
+    input.setAttribute('aria-label', '输入 CONFIRM 确认恢复');
+    input.autocomplete = 'off';
+    const submit = node('button', '', '确认恢复');
+    submit.type = 'button';
+    submit.disabled = true;
+    input.addEventListener('input', () => { submit.disabled = input.value !== 'CONFIRM'; });
+    submit.addEventListener('click', async () => {
+      if (input.value !== 'CONFIRM') return;
+      submit.disabled = true;
+      try {
+        const result = await bridge.apiPost('backup/restore', {
+          token: preview.token, story_id: preview.story_id, confirmation: 'CONFIRM',
+        });
+        if (result.error) throw new Error(result.error);
+        backupFile.value = '';
+        backupMessage(`故事「${preview.story_id}」已恢复。`);
+        await refresh(preview.story_id);
+      } catch (error) { panel.append(node('p', 'empty', `恢复失败：${error.message}`)); }
+    });
+    panel.append(input, submit);
+    backupPreview.replaceChildren(panel);
+  } catch (error) { backupMessage(`备份检查失败：${error.message}`); }
+  finally { button.disabled = false; }
+});
+
+async function refresh(preferredStory = '') {
   content.replaceChildren(node('p', 'empty', '加载中…'));
   try {
     const stories = await bridge.apiGet('stories');
-    const selected = selector.value;
+    const selected = preferredStory || selector.value;
     selector.replaceChildren();
     for (const story of stories.stories || []) {
       const option = document.createElement('option');
@@ -74,7 +147,8 @@ async function refresh() {
       selector.append(option);
     }
     if (selected) selector.value = selected;
-    if (!selector.value) { content.replaceChildren(node('p', 'empty', '暂无故事')); return; }
+    document.getElementById('backup-export').disabled = !selector.value;
+    if (!selector.value) { content.replaceChildren(node('p', 'empty', '暂无故事，可从上方备份文件恢复。')); return; }
     const data = await bridge.apiGet('snapshot', {story_id: selector.value});
     timeZone = data.timezone || 'Asia/Shanghai';
     content.replaceChildren();
@@ -117,7 +191,7 @@ function applyFilter() {
   const term = document.getElementById('filter').value.trim().toLowerCase();
   for (const box of content.querySelectorAll('.card')) box.hidden = !!term && !box.textContent.toLowerCase().includes(term);
 }
-document.getElementById('refresh').addEventListener('click', refresh);
-selector.addEventListener('change', refresh);
+document.getElementById('refresh').addEventListener('click', () => refresh());
+selector.addEventListener('change', () => refresh());
 document.getElementById('filter').addEventListener('input', applyFilter);
 await refresh();
