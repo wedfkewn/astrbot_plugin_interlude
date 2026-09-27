@@ -157,6 +157,66 @@ def test_story_lock_serializes_generation(tmp_path):
     run(scenario())
 
 
+def test_shared_story_keeps_both_users_turns_and_destinations(tmp_path):
+    async def scenario():
+        output = {"interaction": {"seen": True, "reply": {"mode": "immediate", "messages": ["收到"]}}}
+        db, first, _sent, router, _ = await setup(tmp_path, output=output, config={"shared_story": True})
+        second = await db.ensure_participant("story", "test", "u2", "test:private:u2", "小乙")
+        await db.execute("UPDATE participants SET display_name='小甲' WHERE id=?", (first,))
+        started = asyncio.Event()
+        release = asyncio.Event()
+        destinations = []
+
+        async def generate(_provider, _system, _prompt, _umo):
+            started.set()
+            await release.wait()
+            return json.dumps(output)
+
+        async def send(umo, text):
+            destinations.append((umo, text))
+            return True
+
+        router.engine.generate = generate
+        router.delivery.send = send
+        a = StoryEvent("story", EventType.USER_MESSAGE, "甲的问题", first)
+        b = StoryEvent("story", EventType.USER_MESSAGE, "乙的问题", second)
+        await router.ingest(a, debounce=False)
+        first_route = asyncio.create_task(router.route(a))
+        await started.wait()
+        await router.ingest(b, debounce=False)
+        release.set()
+        assert await first_route
+        assert await router.route(b)
+        assert destinations == [("test:private:u1", "收到"), ("test:private:u2", "收到")]
+        assert (await db.one("SELECT revision FROM stories WHERE id='story'"))["revision"] == 2
+        context = await router.engine.builder.build(b)
+        by_content = {entry["content"]: entry for entry in context["recent_events"]}
+        assert by_content["甲的问题"]["participant_id"] == first
+        assert by_content["甲的问题"]["speaker"] == "小甲"
+        assert by_content["乙的问题"]["participant_id"] == second
+        assert by_content["乙的问题"]["speaker"] == "小乙"
+        bot_messages = [entry for entry in context["recent_events"] if entry["type"] == "CHARACTER_MESSAGE_SENT"]
+        assert {entry["recipient"] for entry in bot_messages} == {"小甲", "小乙"}
+        assert all("speaker" not in entry for entry in bot_messages)
+        assert context["current_event"]["speaker"] == "小乙"
+        await router.close()
+        await db.close()
+    run(scenario())
+
+
+def test_shared_story_reset_invalidates_queued_turn(tmp_path):
+    async def scenario():
+        db, pid, sent, router, _ = await setup(tmp_path, config={"shared_story": True})
+        event = StoryEvent("story", EventType.USER_MESSAGE, "before reset", pid)
+        await router.ingest(event, debounce=False)
+        await db.clear_story("story", purge=False)
+        assert not await router.route(event)
+        assert not sent
+        await router.close()
+        await db.close()
+    run(scenario())
+
+
 def test_delivery_failure_is_not_story_speech(tmp_path):
     async def scenario():
         db, pid, _, router, _ = await setup(tmp_path)

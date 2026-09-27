@@ -2,7 +2,7 @@
 
 Interlude 是一个面向 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 的角色叙事插件。它让角色拥有独立、可持久保存的故事状态：记住已经发生的事，感知时间与日程，在合适的时候回复，也可以选择延迟回复或不回复。插件适合希望角色有连续生活感、长期关系变化和明确行为边界的使用场景。
 
-> 当前版本：**1.2.0**。支持 AstrBot 4.24.x 至 4.x、Python 3.12 及以上。核心流程已经用模拟模型和消息发送器做过本地测试；正式使用前仍建议在自己的 AstrBot 平台上验证消息收发。
+> 当前版本：**1.2.1**。支持 AstrBot 4.24.x 至 4.x、Python 3.12 及以上。核心流程已经用模拟模型和消息发送器做过本地测试；正式使用前仍建议在自己的 AstrBot 平台上验证消息收发。
 
 ## 主要功能
 
@@ -53,7 +53,7 @@ Plugin Pages 需要 AstrBot 4.24.1 或更新版本；核心私聊功能可在 4.
 | `enabled` | 启用 Interlude，默认关闭 |
 | `worldbook_enabled` | 启用世界书联动，默认关闭，配置面板中位于 `enabled` 下方 |
 | `character_name`、`character_profile` | 角色名称与简介 |
-| `story_id`、`shared_story` | 故事标识，以及是否让用户共享同一故事 |
+| `story_id`、`shared_story` | 故事标识，以及是否让用户共享同一故事；共享时分别识别说话者和回复目标，其他用户的新消息不会取消正在处理的回复 |
 | `narrative_provider` | 指定叙事模型；留空跟随会话模型 |
 | `message_merge_window_seconds` | 连续消息的合并时间窗口 |
 | `group_enabled` | 开启群聊观察与发言，默认关闭 |

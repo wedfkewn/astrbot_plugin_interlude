@@ -184,21 +184,34 @@ class Database:
              event.content, event.created_at, json.dumps(event.metadata, ensure_ascii=False)),
         )
 
-    async def ingest_event(self, event: StoryEvent, generation_id: str) -> None:
-        """Atomically persist incoming input and invalidate unsent replies."""
+    async def ingest_event(self, event: StoryEvent, generation_id: str | None, *, shared: bool = False) -> None:
+        """Persist input; shared stories retain other participants' pending turns."""
         async with self.commit_lock:
             db = self._db
             await db.execute("BEGIN IMMEDIATE")
             try:
+                if shared:
+                    row = await self.one("SELECT generation_id FROM stories WHERE id=?", (event.story_id,))
+                    if not row:
+                        raise ValueError("story not found")
+                    generation_id = row["generation_id"] or new_id()
+                event.metadata["generation_id"] = generation_id
                 await db.execute(
                     "INSERT OR IGNORE INTO story_entries VALUES(?,?,?,?,?,?,?)",
                     (event.id, event.story_id, event.participant_id, event.event_type.value,
                      event.content, event.created_at, json.dumps(event.metadata, ensure_ascii=False)),
                 )
-                await db.execute(
-                    "UPDATE stories SET revision=revision+1,generation_id=? WHERE id=?",
-                    (generation_id, event.story_id),
-                )
+                if shared:
+                    if row["generation_id"]:
+                        await db.execute("UPDATE stories SET revision=revision+1 WHERE id=?", (event.story_id,))
+                    else:
+                        await db.execute("UPDATE stories SET revision=revision+1,generation_id=? WHERE id=?",
+                                         (generation_id, event.story_id))
+                else:
+                    await db.execute(
+                        "UPDATE stories SET revision=revision+1,generation_id=? WHERE id=?",
+                        (generation_id, event.story_id),
+                    )
                 if event.participant_id:
                     await db.execute("UPDATE participants SET last_interaction_at=? WHERE id=?",
                                      (event.created_at, event.participant_id))

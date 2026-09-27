@@ -134,10 +134,10 @@ class EventRouter:
         self.last_alter_error: str | None = None
 
     async def ingest(self, event: StoryEvent, *, debounce: bool = True) -> None:
-        """Persist input immediately; invalidate previous unsent generations immediately."""
-        generation_id = new_id()
-        event.metadata["generation_id"] = generation_id
-        await self.db.ingest_event(event, generation_id)
+        """Persist input immediately; only isolated stories supersede earlier replies."""
+        shared = bool(self.config.get("shared_story", False))
+        generation_id = None if shared else new_id()
+        await self.db.ingest_event(event, generation_id, shared=shared)
         self.log("EVENT", f"{event.event_type.value} persisted")
         if debounce:
             self.debouncer.add(event)
