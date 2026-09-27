@@ -55,8 +55,9 @@ class ContextBuilder:
         perspectives = [row["content"] for row in perspective_rows
                         if fragments and any(fragment in row["content"] for fragment in fragments)][:5]
         alter = await self.db.one("SELECT accumulated_alter,summary FROM alter_states WHERE story_id=?", (event.story_id,))
-        participants = await self.db.all("SELECT id,display_name,platform_user_id FROM participants WHERE story_id=? AND enabled=1 LIMIT 20", (event.story_id,))
-        last_bot = await self.db.one("SELECT content,occurred_at FROM story_entries WHERE story_id=? AND event_type='CHARACTER_MESSAGE_SENT' ORDER BY occurred_at DESC LIMIT 1", (event.story_id,))
+        participants = await self.db.all("SELECT id,display_name,platform_user_id FROM participants WHERE story_id=? AND enabled=1", (event.story_id,))
+        names = {row["id"]: row["display_name"] or row["platform_user_id"] for row in participants}
+        last_bot = await self.db.one("SELECT content,occurred_at,participant_id FROM story_entries WHERE story_id=? AND event_type='CHARACTER_MESSAGE_SENT' ORDER BY occurred_at DESC LIMIT 1", (event.story_id,))
         schedules = await self.db.all("SELECT kind,content,start_at,end_at FROM schedules WHERE story_id=? AND status='active' AND end_at>=? AND start_at<=? ORDER BY start_at LIMIT 20", (event.story_id, now_iso(), (datetime.now(timezone.utc)+timedelta(hours=12)).isoformat()))
         events = await self.db.recent_events(event.story_id, max(50, int(self.config.get("recent_event_min_count", 50))))
         protected_after = (datetime.now(timezone.utc) - timedelta(minutes=int(self.config.get("recent_message_protect_minutes", 60)))).isoformat()
@@ -79,6 +80,12 @@ class ContextBuilder:
         used = 0
         for row in reversed(events):
             item = {"type": row["event_type"], "content": row["content"], "at": row["occurred_at"]}
+            if row["participant_id"]:
+                item["participant_id"] = row["participant_id"]
+                if row["event_type"] == "CHARACTER_MESSAGE_SENT":
+                    item["recipient"] = names.get(row["participant_id"], row["participant_id"])
+                elif row["event_type"] in {"USER_MESSAGE", "USER_MESSAGE_BATCH", "USER_IMAGE", "GROUP_MESSAGE"}:
+                    item["speaker"] = names.get(row["participant_id"], row["participant_id"])
             if row["event_type"] == "GROUP_MESSAGE":
                 meta = json.loads(row["metadata_json"])
                 item.update({"speaker": meta.get("speaker"), "mentioned": meta.get("mentioned", False),
@@ -103,12 +110,14 @@ class ContextBuilder:
             "facts": [dict(r) for r in facts], "intents": [dict(r) for r in intents],
             "overlays": [dict(r) for r in overlays], "schedule": [dict(r) for r in schedules],
             "perspectives": perspectives, "alter": dict(alter) if alter else None,
-            "participants": [dict(r) for r in participants],
-            "last_bot_message": dict(last_bot) if last_bot else None,
+            "participants": [dict(r) for r in participants[:20]],
+            "last_bot_message": ({**dict(last_bot), "recipient": names.get(last_bot["participant_id"])}
+                                 if last_bot else None),
             "agency": await AgencyService(self.db).evaluate(event.story_id),
             "recent_events": selected, "current_event": {
                 "type": event.event_type.value, "content": event.content,
-                "participant_id": event.participant_id, "metadata": event.metadata,
+                "participant_id": event.participant_id, "speaker": names.get(event.participant_id),
+                "metadata": event.metadata,
             },
             "omitted_event_count": len(events) - len(selected),
         }
@@ -169,6 +178,9 @@ class NarrativeEngine:
             "群聊仅在自然合适且意愿足够时发言；图片观察只是本轮所见，不要保存图片数据。"
             "Agency 表示现实条件；如设备不在身边、正在忙或缺乏隐私，可以延迟或不回复。"
         )
+        if self.config.get("shared_story", False):
+            system += ("共享故事中按 recent_events 的 speaker 和 participant_id 区分用户；"
+                       "回复只面向 current_event 的参与者，不把其他用户说过的话归给当前用户。")
         if self.worldbook and self.config.get("worldbook_enabled", False):
             system = await self.worldbook.apply(event, context["participant"], system)
         prompt = json.dumps({"mode": mode, "context": context, "schema": NarrativeResult.model_json_schema()}, ensure_ascii=False)
