@@ -28,6 +28,7 @@ from .narrative import NarrativeEngine
 from .runtime import DeliveryEngine, EventRouter, RuntimeScheduler
 from .services import MemoryService, SchedulePlanner, ScheduleService
 from .storage import Database
+from .worldbook_adapter import WorldbookAdapter
 
 PLUGIN_NAME = "astrbot_plugin_interlude"
 
@@ -37,7 +38,7 @@ class Interlude(Star):
         super().__init__(context)
         self.config = config
         self.db = Database(Path(get_astrbot_data_path()) / "plugin_data" / PLUGIN_NAME / "interlude.db")
-        self.engine = NarrativeEngine(self.db, config, self._generate)
+        self.engine = NarrativeEngine(self.db, config, self._generate, WorldbookAdapter(context))
         self.delivery = DeliveryEngine(self.db, config, self._send, self._log)
         self.router = EventRouter(self.db, self.engine, self.delivery, config, self._log)
         self.schedule_planner = SchedulePlanner(self.db, config, self._generate)
@@ -152,13 +153,16 @@ class Interlude(Star):
             if images:
                 story_event = StoryEvent(story_id, EventType.USER_IMAGE,
                                          (event.message_str or "") + " [图片]", participant_id,
-                                         metadata={"image_count": len(images)})
+                                         metadata={"image_count": len(images), "is_admin": event.is_admin()})
                 await self.router.ingest(story_event, debounce=False)
                 observation = await self._observe_images(event, images)
                 story_event.content += "\n本轮图片观察：" + observation
                 await self.router.route(story_event)
             else:
-                await self.router.ingest(StoryEvent(story_id, EventType.USER_MESSAGE, event.message_str or "", participant_id))
+                await self.router.ingest(StoryEvent(
+                    story_id, EventType.USER_MESSAGE, event.message_str or "", participant_id,
+                    metadata={"is_admin": event.is_admin()},
+                ))
             event.stop_event()
         except Exception as exc:  # noqa: BLE001 - do not break AstrBot's message dispatcher
             logger.error(f"[EVENT] Interlude ingest failed: {type(exc).__name__}")
@@ -183,6 +187,7 @@ class Interlude(Star):
                 (story_id, (datetime.now(timezone.utc)-timedelta(minutes=5)).isoformat()),
             )
             metadata = {"is_group": True, "speaker": event.get_sender_name() or str(event.get_sender_id()),
+                        "group_id": event.get_group_id(), "is_admin": event.is_admin(),
                         "mentioned": mentioned, "reply_to_bot": reply_to_bot,
                         "conversation_density": recent[0]["n"] if recent else 0}
             story_event = StoryEvent(story_id, EventType.GROUP_MESSAGE,

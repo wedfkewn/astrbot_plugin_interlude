@@ -110,10 +110,11 @@ class ContextBuilder:
 
 
 class NarrativeEngine:
-    def __init__(self, db: Database, config: dict, generate: Generate):
+    def __init__(self, db: Database, config: dict, generate: Generate, worldbook=None):
         self.db = db
         self.config = config
         self.generate = generate
+        self.worldbook = worldbook
         self.builder = ContextBuilder(db, config)
 
     async def run(self, event: StoryEvent, mode: str) -> NarrativeResult:
@@ -159,6 +160,8 @@ class NarrativeEngine:
             "群聊仅在自然合适且意愿足够时发言；图片观察只是本轮所见，不要保存图片数据。"
             "Agency 表示现实条件；如设备不在身边、正在忙或缺乏隐私，可以延迟或不回复。"
         )
+        if self.worldbook and self.config.get("worldbook_enabled", False):
+            system = await self.worldbook.apply(event, context["participant"], system)
         prompt = json.dumps({"mode": mode, "context": context, "schema": NarrativeResult.model_json_schema()}, ensure_ascii=False)
         original_prompt = prompt
         provider = str(self.config.get("narrative_provider", ""))
