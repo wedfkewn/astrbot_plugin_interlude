@@ -30,6 +30,10 @@ The WebUI `_conf_schema.json` groups fields by General, Character, Narrative, Me
 
 The scheduler reads pending intents and runtime jobs from SQLite after a restart. It handles delayed replies, proactive contact, follow-up, reminders, schedule boundaries, and narrative intents. `auto_advance_enabled` advances a stale story only at the configured interval and never calls the model every minute. Unsuccessful model output leaves the input event persisted and does not advance the story cursor. Schedule preplanning persists stable, contextual, and granular blocks. Context reads only the upcoming 12 hours.
 
+### WorldBook integration
+
+Install and enable [astrbot_plugin_worldbook](https://github.com/Zhalslar/astrbot_plugin_worldbook), then enable `worldbook_enabled` in Interlude. For incoming private messages and group mentions/replies that reach narrative generation, Interlude passes the message and sender context to the loaded WorldBook instance. WorldBook applies its own keyword, scope, session, priority, duration, usage count, and wildcard rules to the narrative system prompt. Its entries remain managed in WorldBook. Merged messages are matched once using the combined text. Interlude's character and story settings stay in place. Auxiliary calls (vision, compression, scheduling) and autonomous events do not trigger WorldBook rules. If WorldBook is absent or disabled, generation uses Interlude's original prompt.
+
 ## Commands and Pages
 
 Administrator commands: `/interlude status`, `timeline`, `context`, `script`, `intents`, `advance`, `pause`, `resume`, `doctor`, `memory`, `memory add <content>`, `memory delete <id> CONFIRM`, `schedule`, `schedule refresh`, `overlay`, `overlay clear CONFIRM`, `reset CONFIRM`, and `purge CONFIRM`. Underscore-style command aliases are also available. Dashboard, Story, Memory, and Schedule Pages provide story selection, refresh, filtering, and detail cards. Destructive actions use typed confirmation and a short-lived one-time challenge.
