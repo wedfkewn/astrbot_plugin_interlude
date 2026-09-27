@@ -219,8 +219,8 @@ class Interlude(Star):
     async def page_snapshot(self):
         await self._start()
         query = request.query if hasattr(request, "query") else request.args
-        story_id = query.get("story_id", str(self.config.get("story_id", "default")))
-        if not self.config.get("shared_story", False) and ":" not in story_id:
+        story_id = str(query.get("story_id", ""))
+        if not story_id:
             return json_response({"error": "story_id required"})
         story = await self.db.one("SELECT id,cursor,revision,paused,state_json FROM stories WHERE id=?", (story_id,))
         if not story:
@@ -250,7 +250,9 @@ class Interlude(Star):
     async def page_stories(self):
         await self._start()
         rows = await self.db.all("SELECT id,cursor,paused FROM stories ORDER BY id LIMIT 100")
-        return json_response({"stories": [dict(x) for x in rows]})
+        return json_response({"stories": [dict(x) for x in rows],
+                              "configured_story_id": str(self.config.get("story_id", "default")),
+                              "shared_story": bool(self.config.get("shared_story", False))})
 
     async def page_backup_export(self):
         await self._start()
