@@ -77,6 +77,19 @@ def test_message_merge(tmp_path):
     run(scenario())
 
 
+def test_reset_cancels_messages_waiting_to_merge(tmp_path):
+    async def scenario():
+        db, pid, _sent, router, _scheduler = await setup(tmp_path)
+        await router.ingest(StoryEvent("story", EventType.USER_MESSAGE, "old message", pid))
+        await router.debouncer.cancel_story("story")
+        await db.clear_story("story", purge=False)
+        await asyncio.sleep(0.55)
+        assert not await db.all("SELECT * FROM story_entries WHERE story_id='story'")
+        await router.close()
+        await db.close()
+    run(scenario())
+
+
 def test_story_lock_serializes_generation(tmp_path):
     async def scenario():
         db, pid, _sent, router, _ = await setup(tmp_path)

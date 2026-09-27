@@ -239,6 +239,11 @@ class Interlude(Star):
         rows = await self.db.all("SELECT id,cursor,paused FROM stories ORDER BY id LIMIT 100")
         return json_response({"stories": [dict(x) for x in rows]})
 
+    async def _clear_story(self, story_id: str, *, purge: bool) -> None:
+        await self.router.debouncer.cancel_story(story_id)
+        async with self.router.locks[story_id]:
+            await self.db.clear_story(story_id, purge=purge)
+
     async def page_challenge(self):
         await self._start()
         payload = await request.get_json(silent=True) if hasattr(request, "get_json") else await request.json(default={})
@@ -272,7 +277,7 @@ class Interlude(Star):
             await self.db.execute("UPDATE overlays SET status='superseded' WHERE story_id=?", (story_id,))
             await self.db.execute("UPDATE perspectives SET status='superseded' WHERE story_id=?", (story_id,))
         else:
-            await self.db.clear_story(story_id, purge=action == "story_purge")
+            await self._clear_story(story_id, purge=action == "story_purge")
         return json_response({"ok": True})
 
     @filter.command_group("interlude")
@@ -437,7 +442,7 @@ class Interlude(Star):
             yield event.plain_result("此操作会清空当前故事状态但保留角色与参与者。再次输入 /interlude reset CONFIRM")
             return
         story_id, _ = await self._ensure_story(event.unified_msg_origin, str(event.get_sender_id()), event.get_sender_name() or "")
-        await self.db.clear_story(story_id, purge=False)
+        await self._clear_story(story_id, purge=False)
         yield event.plain_result("故事状态已重置")
 
     @interlude.command("purge")
@@ -447,5 +452,5 @@ class Interlude(Star):
             yield event.plain_result("此操作会永久删除当前故事。再次输入 /interlude purge CONFIRM")
             return
         story_id, _ = await self._ensure_story(event.unified_msg_origin, str(event.get_sender_id()), event.get_sender_name() or "")
-        await self.db.clear_story(story_id, purge=True)
+        await self._clear_story(story_id, purge=True)
         yield event.plain_result("故事已删除")

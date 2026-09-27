@@ -58,6 +58,16 @@ h1 { margin: 0; font-size: clamp(28px, 4vw, 38px); line-height: 1.22; letter-spa
 .timeline { overflow: hidden; }
 .timeline-item { display: grid; grid-template-columns: 122px minmax(0, 1fr); gap: 18px; padding: 15px 20px; border-top: 1px solid var(--line); }
 .timeline-item:first-child { border-top: 0; }
+.maintenance-panel { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 18px 20px; }
+.maintenance-panel h3 { margin: 0 0 4px; font-size: 14px; }
+.maintenance-panel p { margin: 0; color: var(--muted); font-size: 12px; }
+.maintenance-panel .danger-button { padding: 8px 12px; border: 1px solid #b55454; border-radius: 8px; color: #9b3434; background: var(--surface); font-weight: 700; }
+.maintenance-panel .danger-button:hover, .maintenance-panel .danger-button:focus-visible { background: #fff0ef; }
+.maintenance-panel button:disabled { opacity: .55; cursor: not-allowed; }
+.confirmation { flex-basis: 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 14px; }
+.confirmation input { width: 180px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.confirmation button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.confirmation .error-text { flex-basis: 100%; color: #9b3434; }
 .event-type { color: var(--accent); font-size: 12px; font-weight: 750; overflow-wrap: anywhere; }
 .event-content { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .event-time { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; }

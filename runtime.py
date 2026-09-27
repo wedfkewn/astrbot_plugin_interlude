@@ -70,6 +70,17 @@ class MessageDebouncer:
         await asyncio.gather(*tasks, return_exceptions=True)
         self.tasks.clear()
 
+    async def cancel_story(self, story_id: str) -> None:
+        """Discard messages still waiting in the merge window before a story reset."""
+        matching = [key for key in self.pending if key[0] == story_id]
+        tasks = [self.tasks.pop(key) for key in matching if key in self.tasks]
+        for key in matching:
+            self.pending.pop(key, None)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
 
 class DeliveryEngine:
     def __init__(self, db: Database, config: dict, send: Send, log: Log | None = None):

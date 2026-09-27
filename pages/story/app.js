@@ -18,11 +18,12 @@ function card(title, detail, meta = '') {
 function addAction(box, label, action, itemId = '') {
   const button = node('button', '', label);
   button.addEventListener('click', () => {
+    const selectedStory = selector.value;
     const existing = document.getElementById('confirm-panel');
     if (existing) existing.remove();
     const panel = node('section', 'card', '');
     panel.id = 'confirm-panel';
-    panel.append(node('p', '', `确认执行「${label}」？输入 CONFIRM 后提交。`));
+    panel.append(node('p', '', `确认对故事「${selectedStory}」执行「${label}」？输入 CONFIRM 后提交。`));
     const input = document.createElement('input');
     input.setAttribute('aria-label', '确认文字');
     const submit = node('button', '', '执行');
@@ -32,7 +33,7 @@ function addAction(box, label, action, itemId = '') {
       if (input.value !== 'CONFIRM') { panel.append(node('p', 'empty', '请输入 CONFIRM')); return; }
       submit.disabled = true;
       try {
-        const body = {action, story_id: selector.value, item_id: itemId};
+        const body = {action, story_id: selectedStory, item_id: itemId};
         const challenge = await bridge.apiPost('challenge', body);
         if (challenge.error) throw new Error(challenge.error);
         const result = await bridge.apiPost('action', {token: challenge.token, confirmation: 'CONFIRM'});
