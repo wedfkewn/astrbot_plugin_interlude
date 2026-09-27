@@ -147,9 +147,14 @@ class Database:
 
     async def ensure_story(self, story_id: str, character_id: str, character: dict, world: dict) -> None:
         async with self.commit_lock:
-            await self._db.execute("INSERT OR IGNORE INTO characters VALUES (?, ?)", (character_id, json.dumps(character, ensure_ascii=False)))
             await self._db.execute(
-                "INSERT OR IGNORE INTO stories(id, character_id, world_json, cursor) VALUES (?, ?, ?, ?)",
+                "INSERT INTO characters(id,data_json) VALUES(?,?) "
+                "ON CONFLICT(id) DO UPDATE SET data_json=excluded.data_json",
+                (character_id, json.dumps(character, ensure_ascii=False)),
+            )
+            await self._db.execute(
+                "INSERT INTO stories(id, character_id, world_json, cursor) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET character_id=excluded.character_id,world_json=excluded.world_json",
                 (story_id, character_id, json.dumps(world, ensure_ascii=False), now_iso()),
             )
             await self._db.commit()
