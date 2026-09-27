@@ -113,6 +113,53 @@ function renderDashboard(data) {
     timeline.append(row);
   }
   content.append(timeline);
+
+  section('故事维护');
+  const maintenance = element('section', 'panel maintenance-panel');
+  const explanation = element('div');
+  explanation.append(
+    element('h3', '', '恢复当前故事的初始状态'),
+    element('p', '', '清空剧情、记忆、关系、日程与待发送任务；保留角色设定、世界设定和参与者。此操作无法撤销。'),
+  );
+  const resetButton = element('button', 'danger-button', '格式化当前故事');
+  resetButton.type = 'button';
+  resetButton.addEventListener('click', () => {
+    const storyId = selector.value;
+    resetButton.disabled = true;
+    const confirmation = element('div', 'confirmation');
+    confirmation.append(element('p', '', `即将恢复故事「${storyId}」的初始状态。请输入 CONFIRM 确认。`));
+    const input = element('input');
+    input.setAttribute('aria-label', '输入 CONFIRM 确认格式化');
+    input.autocomplete = 'off';
+    const submit = element('button', 'danger-button', '确认格式化');
+    submit.type = 'button';
+    submit.disabled = true;
+    input.addEventListener('input', () => { submit.disabled = input.value !== 'CONFIRM'; });
+    const cancel = element('button', '', '取消');
+    cancel.type = 'button';
+    cancel.addEventListener('click', () => { confirmation.remove(); resetButton.disabled = false; });
+    submit.addEventListener('click', async () => {
+      if (input.value !== 'CONFIRM') return;
+      submit.disabled = true;
+      cancel.disabled = true;
+      try {
+        const challenge = await bridge.apiPost('challenge', {action: 'story_reset', story_id: storyId});
+        if (challenge.error) throw new Error(challenge.error);
+        const result = await bridge.apiPost('action', {token: challenge.token, confirmation: 'CONFIRM'});
+        if (result.error) throw new Error(result.error);
+        await refresh();
+      } catch (error) {
+        confirmation.append(element('p', 'error-text', `格式化失败：${error.message}`));
+        cancel.disabled = false;
+        submit.disabled = false;
+      }
+    });
+    confirmation.append(input, submit, cancel);
+    maintenance.append(confirmation);
+    input.focus();
+  });
+  maintenance.append(explanation, resetButton);
+  content.append(maintenance);
   applyFilter();
 }
 

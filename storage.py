@@ -431,8 +431,12 @@ class Database:
                     await db.execute("DELETE FROM stories WHERE id=?", (story_id,))
                 else:
                     await db.execute(
-                        "UPDATE stories SET cursor=?,revision=revision+1,generation_id=?,state_json='{}' WHERE id=?",
+                        "UPDATE stories SET cursor=?,revision=revision+1,generation_id=?,state_json='{}',paused=0 WHERE id=?",
                         (now_iso(), new_id(), story_id),
+                    )
+                    await db.execute(
+                        "UPDATE participants SET last_interaction_at=NULL WHERE story_id=?",
+                        (story_id,),
                     )
                 await db.commit()
             except Exception:

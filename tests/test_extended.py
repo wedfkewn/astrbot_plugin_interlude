@@ -130,9 +130,14 @@ def test_delivery_recovery_and_reset(tmp_path):
         delivery = await db.record_delivery("s", pid, "test:private:u", "maybe", None, "reply")
         assert await db.mark_uncertain_deliveries() == 1
         assert (await db.one("SELECT status FROM deliveries WHERE id=?", (delivery,)))["status"] == "uncertain"
+        await db.execute("UPDATE stories SET paused=1,state_json=? WHERE id='s'", ('{"activity":"busy"}',))
+        await db.execute("UPDATE participants SET last_interaction_at=? WHERE id=?", (datetime.now(timezone.utc).isoformat(), pid))
         await db.clear_story("s", purge=False)
         assert (await db.one("SELECT COUNT(*) AS n FROM deliveries"))["n"] == 0
-        assert await db.one("SELECT * FROM participants WHERE id=?", (pid,))
+        story = await db.one("SELECT paused,state_json FROM stories WHERE id='s'")
+        assert story["paused"] == 0 and story["state_json"] == "{}"
+        participant = await db.one("SELECT last_interaction_at FROM participants WHERE id=?", (pid,))
+        assert participant and participant["last_interaction_at"] is None
         await db.clear_story("s", purge=True)
         assert not await db.one("SELECT * FROM stories WHERE id='s'")
         await router.close()

@@ -13,6 +13,7 @@ Interlude 是一个面向 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 的�
 - **群聊与图片**：群聊可单独启用。普通群消息可以进入故事背景；被提及或收到回复时，角色再判断是否发言。图片通过具备视觉能力的模型生成临时文字观察，不保存图片字节。
 - **世界书联动**：可选接入 [astrbot_plugin_worldbook](https://github.com/Zhalslar/astrbot_plugin_worldbook)，在叙事生成时使用它管理的关键词规则和世界观条目。
 - **管理入口**：提供管理员命令，以及 Dashboard、Story、Memory、Schedule 页面，用于查看故事、记忆、日程和运行状态。
+- **故事初始化**：在“故事总览”中可格式化当前选中的故事，清除剧情与衍生数据并恢复运行状态；操作需输入 `CONFIRM`，角色设定、世界设定和参与者仍会保留。
 
 ## 安装与开始使用
 
