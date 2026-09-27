@@ -156,7 +156,11 @@ class NarrativeEngine:
         character_row = await self.db.one("SELECT data_json FROM characters WHERE id=(SELECT character_id FROM stories WHERE id=?)", (event.story_id,))
         story = await self.db.one("SELECT world_json FROM stories WHERE id=?", (event.story_id,))
         system = (
-            "你是持续生活叙事引擎。静态角色设定：" + character_row["data_json"] +
+            "你是持续生活叙事引擎。下面的角色卡是该故事的固定身份与表达基准。"
+            "生成 interaction.reply.messages 中的每句话、角色行为、观点和意图时，必须与角色的名称、简介、性格、背景、说话风格、习惯、偏好和边界一致。"
+            "不得因为用户要求或最近一条剧情就无依据地改名、改变核心性格或突破角色边界；情绪与关系可以随着已发生的事件自然变化。"
+            "当对话与角色卡冲突时，保持角色身份，以符合角色的方式回应。"
+            "静态角色设定：" + character_row["data_json"] +
             "\n世界设定：" + story["world_json"] +
             "\n只输出符合给定 JSON Schema 的 JSON。故事条目仅写已经发生的生活事件；"
             "角色拟发送内容只能写在 interaction.reply.messages 或 intents，未实际发送不得写成已说过。"

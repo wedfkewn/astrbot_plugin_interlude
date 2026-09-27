@@ -91,6 +91,34 @@ def test_narrative_current_time_uses_configured_timezone(tmp_path):
     run(scenario())
 
 
+def test_character_edits_update_existing_story_and_narrative_prompt(tmp_path):
+    async def scenario():
+        db, pid, _sent, router, _scheduler = await setup(tmp_path)
+        await db.append_event(StoryEvent("story", EventType.USER_MESSAGE, "previous conversation", pid))
+        await db.ensure_story("story", "character", {
+            "name": "Lin", "profile": "大学生", "personality": "谨慎而幽默",
+            "speaking_style": "简洁", "boundaries": "不编造承诺",
+        }, {"world_description": "现实校园"})
+        observed = []
+
+        async def generate(_provider, system, _prompt, _umo):
+            observed.append(system)
+            return '{"interaction":{"reply":{"mode":"none"}}}'
+
+        router.engine.generate = generate
+        await router.engine.run(StoryEvent("story", EventType.USER_MESSAGE, "你好", pid), "USER_EVENT")
+        assert '"name": "Lin"' in observed[0]
+        assert '"personality": "谨慎而幽默"' in observed[0]
+        assert '"world_description": "现实校园"' in observed[0]
+        assert "必须与角色的名称、简介、性格" in observed[0]
+        assert (await db.one("SELECT COUNT(*) AS n FROM story_entries WHERE story_id='story'"))["n"] == 1
+        await db.ensure_story("story", "other_character", {"name": "Mira"}, {})
+        assert (await db.one("SELECT character_id FROM stories WHERE id='story'"))["character_id"] == "other_character"
+        await router.close()
+        await db.close()
+    run(scenario())
+
+
 def test_reset_cancels_messages_waiting_to_merge(tmp_path):
     async def scenario():
         db, pid, _sent, router, _scheduler = await setup(tmp_path)
