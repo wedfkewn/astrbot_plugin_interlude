@@ -77,6 +77,20 @@ def test_message_merge(tmp_path):
     run(scenario())
 
 
+def test_narrative_current_time_uses_configured_timezone(tmp_path):
+    async def scenario():
+        db, pid, _sent, router, _scheduler = await setup(tmp_path, config={"timezone": "Asia/Shanghai"})
+        context = await router.engine.builder.build(StoryEvent("story", EventType.USER_MESSAGE, "hello", pid))
+        local_time = datetime.fromisoformat(context["current_time"])
+        cursor = datetime.fromisoformat(context["story_cursor"])
+        assert local_time.utcoffset() == timedelta(hours=8)
+        assert cursor.utcoffset() == timedelta(0)
+        assert abs((local_time.astimezone(timezone.utc) - datetime.now(timezone.utc)).total_seconds()) < 5
+        await router.close()
+        await db.close()
+    run(scenario())
+
+
 def test_reset_cancels_messages_waiting_to_merge(tmp_path):
     async def scenario():
         db, pid, _sent, router, _scheduler = await setup(tmp_path)

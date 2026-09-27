@@ -6,6 +6,7 @@ import json
 import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import ValidationError
 
@@ -88,8 +89,12 @@ class ContextBuilder:
                 selected.append(item)
                 used += size
         selected.reverse()
+        try:
+            local_time = datetime.now(ZoneInfo(str(self.config.get("timezone", "Asia/Shanghai")))).isoformat()
+        except ZoneInfoNotFoundError:
+            local_time = now_iso()
         return {
-            "current_time": now_iso(), "story_cursor": story["cursor"],
+            "current_time": local_time, "story_cursor": story["cursor"],
             "current_state": json.loads(story["state_json"]),
             "scene_summary": scene["summary"] if scene else "",
             "participant": dict(participant) if participant else None,

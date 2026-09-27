@@ -4,6 +4,7 @@ const search = document.getElementById('filter');
 const content = document.getElementById('content');
 const refreshButton = document.getElementById('refresh');
 const count = document.getElementById('story-count');
+let activeTimeZone = 'Asia/Shanghai';
 
 function element(tag, className = '', value = '') {
   const item = document.createElement(tag);
@@ -12,10 +13,23 @@ function element(tag, className = '', value = '') {
   return item;
 }
 
-function dateLabel(value) {
+function dateLabel(value, withSeconds = false) {
   if (!value) return '';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('zh-CN', {dateStyle: 'medium', timeStyle: 'short'});
+  if (Number.isNaN(date.getTime())) return String(value);
+  try {
+    return date.toLocaleString('zh-CN', {
+      timeZone: activeTimeZone, dateStyle: 'medium', timeStyle: withSeconds ? 'medium' : 'short',
+    });
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    return date.toLocaleString('zh-CN', {timeZone: 'UTC', dateStyle: 'medium', timeStyle: withSeconds ? 'medium' : 'short'});
+  }
+}
+
+function updateLiveClock() {
+  const clock = content.querySelector('[data-live-clock]');
+  if (clock) clock.textContent = dateLabel(new Date(), true);
 }
 
 function section(title, note = '') {
@@ -85,7 +99,7 @@ function renderDashboard(data) {
   section('运行概览', '故事与调度器状态');
   const metrics = element('div', 'metrics');
   metrics.append(
-    metric('故事进度', story.cursor ?? '—', `修订版本 ${story.revision ?? '—'}`),
+    metric('故事进度', dateLabel(story.cursor) || '—', `上次叙事推进 · 修订版本 ${story.revision ?? '—'}`),
     metric('待处理意图', pending, '等待后续推进'),
     metric('调度器', schedulerRunning ? '运行中' : '已停止', data.scheduler?.last_error || '无最近错误'),
     metric('最近事件', (data.entries || []).length, '最多显示最近 50 条'),
@@ -94,9 +108,12 @@ function renderDashboard(data) {
 
   section('角色与时间');
   const details = element('div', 'details');
+  const clockDetail = detail('现实时间', dateLabel(new Date(), true), `时区 · ${activeTimeZone}`);
+  clockDetail.querySelector('p').dataset.liveClock = '';
   details.append(
     detail('角色此刻', state.activity || '暂无活动记录', state.location ? `地点 · ${state.location}` : '地点暂未记录'),
-    detail('当前时间', dateLabel(data.current_time) || '未知', state.world_state || '世界状态暂未记录'),
+    clockDetail,
+    detail('世界状态', state.world_state || '世界状态暂未记录'),
   );
   content.append(details);
 
@@ -203,6 +220,7 @@ async function refresh() {
     if (!list.length) { renderEmpty(); return; }
     const data = await bridge.apiGet('snapshot', {story_id: selector.value});
     if (data.error) throw new Error(data.error);
+    activeTimeZone = data.timezone || 'Asia/Shanghai';
     content.replaceChildren();
     renderDashboard(data);
   } catch (error) {
@@ -215,4 +233,5 @@ async function refresh() {
 refreshButton.addEventListener('click', refresh);
 selector.addEventListener('change', refresh);
 search.addEventListener('input', applyFilter);
+setInterval(updateLiveClock, 1000);
 await refresh();
