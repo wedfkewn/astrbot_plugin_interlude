@@ -1,5 +1,6 @@
 {
   "enabled": {"description": "General · 启用插件", "type": "bool", "default": false},
+  "worldbook_enabled": {"description": "General · 启用世界书联动（需安装并启用 astrbot_plugin_worldbook）", "type": "bool", "default": false},
   "story_id": {"description": "General · Story ID", "type": "string", "default": "default"},
   "shared_story": {"description": "General · 用户共享同一故事", "type": "bool", "default": false},
   "group_enabled": {"description": "General · 启用群聊观察与发言", "type": "bool", "default": false},
@@ -17,7 +18,6 @@
   "character_default_schedule": {"description": "Character · 默认日程", "type": "text", "default": ""},
   "world_description": {"description": "Character · 世界设定", "type": "text", "default": ""},
   "narrative_provider": {"description": "Narrative · Provider ID，留空跟随当前会话", "type": "string", "default": ""},
-  "worldbook_enabled": {"description": "Narrative · 将世界书规则用于叙事生成（需安装并启用 astrbot_plugin_worldbook）", "type": "bool", "default": false},
   "compression_provider": {"description": "Narrative · 压缩 Provider ID", "type": "string", "default": ""},
   "alter_provider": {"description": "Narrative · 氛围 Provider ID", "type": "string", "default": ""},
   "memory_provider": {"description": "Narrative · 记忆 Provider ID", "type": "string", "default": ""},
