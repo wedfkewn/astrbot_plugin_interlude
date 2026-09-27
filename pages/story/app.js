@@ -37,6 +37,7 @@ function addAction(box, label, action, itemId = '') {
     const panel = node('section', 'card', '');
     panel.id = 'confirm-panel';
     panel.append(node('p', '', `确认对故事「${selectedStory}」执行「${label}」？输入 CONFIRM 后提交。`));
+    if (action === 'story_purge') panel.append(node('p', 'empty', '若当前插件配置仍指向此故事，新消息会重新创建它。'));
     const input = document.createElement('input');
     input.setAttribute('aria-label', '确认文字');
     const submit = node('button', '', '执行');
@@ -52,6 +53,7 @@ function addAction(box, label, action, itemId = '') {
         const result = await bridge.apiPost('action', {token: challenge.token, confirmation: 'CONFIRM'});
         if (result.error) throw new Error(result.error);
         await refresh();
+        if (action === 'story_purge') content.prepend(node('p', 'empty', `故事「${selectedStory}」已删除。`));
       } catch (error) {
         panel.append(node('p', 'empty', `操作失败：${error.message}`));
         submit.disabled = false;
@@ -143,13 +145,17 @@ async function refresh(preferredStory = '') {
     for (const story of stories.stories || []) {
       const option = document.createElement('option');
       option.value = story.id;
-      option.textContent = story.id;
+      const configured = stories.configured_story_id || 'default';
+      if (story.id === configured) option.textContent = `${story.id} · 共享故事${stories.shared_story ? '（当前模式）' : '（历史）'}`;
+      else if (story.id.startsWith(`${configured}:`)) option.textContent = `${story.id} · 独立会话故事${stories.shared_story ? '（历史）' : '（当前模式）'}`;
+      else option.textContent = `${story.id} · 旧 Story ID`;
       selector.append(option);
     }
-    if (selected) selector.value = selected;
+    if (selected && [...selector.options].some(option => option.value === selected)) selector.value = selected;
     document.getElementById('backup-export').disabled = !selector.value;
     if (!selector.value) { content.replaceChildren(node('p', 'empty', '暂无故事，可从上方备份文件恢复。')); return; }
     const data = await bridge.apiGet('snapshot', {story_id: selector.value});
+    if (data.error) throw new Error(data.error);
     timeZone = data.timezone || 'Asia/Shanghai';
     content.replaceChildren();
     if (view === 'dashboard') {
