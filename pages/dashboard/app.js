@@ -1,110 +1,171 @@
 const bridge = window.AstrBotPluginPage;
-await bridge.ready();
 const selector = document.getElementById('story');
+const search = document.getElementById('filter');
 const content = document.getElementById('content');
-const view = content.dataset.view;
-function node(tag, className, value) {
-  const element = document.createElement(tag);
-  element.className = className;
-  element.textContent = value;
-  return element;
+const refreshButton = document.getElementById('refresh');
+const count = document.getElementById('story-count');
+
+function element(tag, className = '', value = '') {
+  const item = document.createElement(tag);
+  item.className = className;
+  item.textContent = value;
+  return item;
 }
-function card(title, detail, meta = '') {
-  const box = node('section', 'card', '');
-  box.append(node('strong', '', title), node('p', '', detail), node('small', 'meta', meta));
-  content.append(box);
+
+function dateLabel(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('zh-CN', {dateStyle: 'medium', timeStyle: 'short'});
+}
+
+function section(title, note = '') {
+  const heading = element('div', 'section-heading');
+  heading.append(element('h2', '', title), element('span', '', note));
+  content.append(heading);
+}
+
+function message(title, detail, icon = '○') {
+  const panel = element('section', 'panel message-panel');
+  panel.append(element('div', 'message-icon', icon), element('h2', '', title), element('p', '', detail));
+  content.replaceChildren(panel);
+  return panel;
+}
+
+function metric(label, value, note = '') {
+  const box = element('section', 'panel metric');
+  box.append(element('p', 'metric-label', label), element('p', 'metric-value', String(value)), element('small', 'metric-note', note));
   return box;
 }
-function addAction(box, label, action, itemId = '') {
-  const button = node('button', '', label);
-  button.addEventListener('click', () => {
-    const existing = document.getElementById('confirm-panel');
-    if (existing) existing.remove();
-    const panel = node('section', 'card', '');
-    panel.id = 'confirm-panel';
-    panel.append(node('p', '', `确认执行「${label}」？输入 CONFIRM 后提交。`));
-    const input = document.createElement('input');
-    input.setAttribute('aria-label', '确认文字');
-    const submit = node('button', '', '执行');
-    const cancel = node('button', '', '取消');
-    cancel.addEventListener('click', () => panel.remove());
-    submit.addEventListener('click', async () => {
-      if (input.value !== 'CONFIRM') { panel.append(node('p', 'empty', '请输入 CONFIRM')); return; }
-      submit.disabled = true;
-      try {
-        const body = {action, story_id: selector.value, item_id: itemId};
-        const challenge = await bridge.apiPost('challenge', body);
-        if (challenge.error) throw new Error(challenge.error);
-        const result = await bridge.apiPost('action', {token: challenge.token, confirmation: 'CONFIRM'});
-        if (result.error) throw new Error(result.error);
-        await refresh();
-      } catch (error) {
-        panel.append(node('p', 'empty', `操作失败：${error.message}`));
-        submit.disabled = false;
-      }
-    });
-    panel.append(input, submit, cancel);
-    content.prepend(panel);
-    input.focus();
-  });
-  box.append(button);
+
+function detail(label, value, note = '') {
+  const box = element('section', 'panel detail');
+  box.append(element('h3', '', label), element('p', '', value), element('small', '', note));
+  return box;
 }
+
+function renderEmpty() {
+  const panel = message('还没有故事', '与角色的第一段私聊会创建故事，此后这里会显示场景、状态与最近事件。', '✦');
+  const steps = element('div', 'steps');
+  for (const [number, description] of [
+    ['01 · 配置角色', '在插件配置中设置角色资料与叙事模型。'],
+    ['02 · 发起私聊', '向接入 AstrBot 的角色发送一条消息。'],
+    ['03 · 回到这里', '刷新页面，查看故事如何继续。'],
+  ]) {
+    const step = element('div', 'step');
+    step.append(element('b', '', number), document.createTextNode(description));
+    steps.append(step);
+  }
+  const actions = element('div', 'message-actions');
+  const settings = element('a', 'primary', '前往插件管理');
+  settings.href = '/#/extension';
+  settings.target = '_top';
+  const retry = element('button', '', '重新检查');
+  retry.type = 'button';
+  retry.addEventListener('click', refresh);
+  actions.append(settings, retry);
+  panel.append(steps, actions);
+}
+
+function renderDashboard(data) {
+  const story = data.story || {};
+  let state = {};
+  try { state = JSON.parse(story.state_json || '{}') || {}; } catch { /* Malformed stored state should not hide the dashboard. */ }
+  const entries = (data.entries || []).slice(-8).reverse();
+  const pending = (data.intents || []).filter(item => item.status === 'pending').length;
+  const schedulerRunning = Boolean(data.scheduler?.running);
+
+  const scene = element('section', 'panel scene-panel');
+  scene.append(element('p', 'panel-kicker', '当前场景'), element('p', 'scene-text', data.scene?.summary || '故事已创建，等待下一段场景展开。'));
+  const sceneMeta = element('div', 'scene-meta');
+  sceneMeta.append(element('span', `status-pill${story.paused ? ' paused' : ''}`, story.paused ? '故事已暂停' : '故事进行中'));
+  if (data.scene?.last_activity_at) sceneMeta.append(element('span', '', `最近活动 · ${dateLabel(data.scene.last_activity_at)}`));
+  scene.append(sceneMeta);
+  content.append(scene);
+
+  section('运行概览', '故事与调度器状态');
+  const metrics = element('div', 'metrics');
+  metrics.append(
+    metric('故事进度', story.cursor ?? '—', `修订版本 ${story.revision ?? '—'}`),
+    metric('待处理意图', pending, '等待后续推进'),
+    metric('调度器', schedulerRunning ? '运行中' : '已停止', data.scheduler?.last_error || '无最近错误'),
+    metric('最近事件', (data.entries || []).length, '最多显示最近 50 条'),
+  );
+  content.append(metrics);
+
+  section('角色与时间');
+  const details = element('div', 'details');
+  details.append(
+    detail('角色此刻', state.activity || '暂无活动记录', state.location ? `地点 · ${state.location}` : '地点暂未记录'),
+    detail('当前时间', dateLabel(data.current_time) || '未知', state.world_state || '世界状态暂未记录'),
+  );
+  content.append(details);
+
+  section('最近事件', `显示 ${entries.length} 条`);
+  const timeline = element('div', 'panel timeline');
+  if (!entries.length) timeline.append(element('p', 'inline-empty', '还没有事件。与角色交流后，这里会记录故事变化。'));
+  for (const item of entries) {
+    const row = element('article', 'timeline-item');
+    row.dataset.search = `${item.event_type || ''} ${item.content || ''} ${item.occurred_at || ''}`.toLowerCase();
+    const type = element('div', 'event-type', item.event_type || '事件');
+    const body = element('div');
+    body.append(element('p', 'event-content', item.content || '无文字内容'), element('time', 'event-time', dateLabel(item.occurred_at)));
+    row.append(type, body);
+    timeline.append(row);
+  }
+  content.append(timeline);
+  applyFilter();
+}
+
+function applyFilter() {
+  const term = search.value.trim().toLowerCase();
+  const rows = [...content.querySelectorAll('.timeline-item')];
+  let shown = 0;
+  for (const row of rows) {
+    row.hidden = Boolean(term && !row.dataset.search.includes(term));
+    if (!row.hidden) shown += 1;
+  }
+  const existing = content.querySelector('.filter-empty');
+  if (existing) existing.remove();
+  if (term && rows.length && !shown) {
+    const empty = element('p', 'inline-empty filter-empty', '没有匹配的最近事件。');
+    content.querySelector('.timeline').append(empty);
+  }
+}
+
 async function refresh() {
-  content.replaceChildren(node('p', 'empty', '加载中…'));
+  refreshButton.disabled = true;
+  content.replaceChildren(element('p', 'inline-empty', '正在加载故事…'));
   try {
+    if (!bridge) throw new Error('AstrBot 页面桥接不可用');
+    await bridge.ready();
     const stories = await bridge.apiGet('stories');
-    const selected = selector.value;
-    selector.replaceChildren();
-    for (const story of stories.stories || []) {
+    if (stories.error) throw new Error(stories.error);
+    const previous = selector.value;
+    const list = stories.stories || [];
+    selector.replaceChildren(...list.map(story => {
       const option = document.createElement('option');
       option.value = story.id;
       option.textContent = story.id;
-      selector.append(option);
-    }
-    if (selected) selector.value = selected;
-    if (!selector.value) { content.replaceChildren(node('p', 'empty', '暂无故事')); return; }
+      return option;
+    }));
+    if (!list.length) selector.append(element('option', '', '尚无故事'));
+    if (list.some(story => story.id === previous)) selector.value = previous;
+    selector.disabled = !list.length;
+    search.disabled = !list.length;
+    count.textContent = list.length ? `共 ${list.length} 个故事` : '尚未创建故事';
+    if (!list.length) { renderEmpty(); return; }
     const data = await bridge.apiGet('snapshot', {story_id: selector.value});
+    if (data.error) throw new Error(data.error);
     content.replaceChildren();
-    if (view === 'dashboard') {
-      card('当前故事', `Cursor: ${data.story.cursor}`, `Revision ${data.story.revision} · ${data.story.paused ? '已暂停' : '运行中'}`);
-      card('当前时间', data.current_time || '未知');
-      card('调度器', data.scheduler?.running ? '运行中' : '已停止', data.scheduler?.last_error || '无最近错误');
-      const state = JSON.parse(data.story.state_json || '{}');
-      card('角色状态', `地点：${state.location || '未知'} · 活动：${state.activity || '未知'}`, state.world_state || '');
-      card('当前场景', data.scene?.summary || '尚无摘要', data.scene?.last_activity_at || '');
-      card('待处理意图', String((data.intents || []).filter(x => x.status === 'pending').length));
-      for (const item of (data.entries || []).slice(-8).reverse()) card(item.event_type, item.content, item.occurred_at);
-    } else if (view === 'story') {
-      card('Active Scene', data.scene?.summary || '尚无摘要', data.scene?.last_activity_at || '');
-      const actions = card('故事维护', '重置会清空当前剧情但保留角色与参与者；永久删除会移除整个故事。');
-      addAction(actions, '重置故事', 'story_reset');
-      addAction(actions, '永久删除故事', 'story_purge');
-      for (const item of (data.entries || []).slice().reverse()) card(item.event_type, item.content, item.occurred_at);
-    } else if (view === 'memory') {
-      for (const item of data.facts || []) {
-        const box = card(item.scope, item.content, item.status);
-        if (item.status === 'active') addAction(box, '归档记忆', 'memory_delete', item.id);
-      }
-      for (const item of data.overlays || []) card(`Overlay · ${item.scope}`, item.content, item.status);
-      for (const item of data.perspectives || []) card('Perspective', item.content, item.status);
-      for (const item of data.relationships || []) card(`Relationship · ${item.participant_id}`, item.summary || '暂无文字摘要');
-      if ((data.overlays || []).some(x => x.status === 'active')) {
-        addAction(card('演化层维护', '清除所有 Overlay 与 Perspective。'), '清除演化层', 'overlay_clear');
-      }
-    } else {
-      for (const item of data.schedules || []) card(item.kind, item.content, `${item.start_at} → ${item.end_at}`);
-      for (const item of data.intents || []) card(item.type, item.content, `${item.due_at} · ${item.status}`);
-      for (const item of data.jobs || []) card(`任务 · ${item.kind}`, item.id, `${item.due_at} · ${item.status}`);
-    }
-    if (!content.children.length) content.append(node('p', 'empty', '暂无记录'));
-    applyFilter();
-  } catch (error) { content.replaceChildren(node('p', 'empty', `加载失败：${error.message}`)); }
+    renderDashboard(data);
+  } catch (error) {
+    message('暂时无法载入故事', `请检查插件状态后重试：${error.message}`, '!');
+  } finally {
+    refreshButton.disabled = false;
+  }
 }
-function applyFilter() {
-  const term = document.getElementById('filter').value.trim().toLowerCase();
-  for (const box of content.querySelectorAll('.card')) box.hidden = !!term && !box.textContent.toLowerCase().includes(term);
-}
-document.getElementById('refresh').addEventListener('click', refresh);
+
+refreshButton.addEventListener('click', refresh);
 selector.addEventListener('change', refresh);
-document.getElementById('filter').addEventListener('input', applyFilter);
+search.addEventListener('input', applyFilter);
 await refresh();

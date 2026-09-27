@@ -1,3 +1,35 @@
-<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Interlude Dashboard</title><link rel="stylesheet" href="./style.css"><main><header><h1>Interlude · Dashboard</h1><button id="refresh">刷新</button></header><label>故事 <select id="story"></select></label><label>筛选 <input id="filter" placeholder="输入关键词"></label><div id="content" data-view="dashboard"></div></main><script type="module" src="./app.js"></script></html>
-
-
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interlude · 故事总览</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">INTERLUDE / STORY CONTROL</p>
+        <h1>故事总览</h1>
+        <p class="subtitle">查看角色正在经历什么，以及故事接下来会发生什么。</p>
+      </div>
+      <button id="refresh" class="refresh-button" type="button" aria-label="刷新故事数据">↻ <span>刷新数据</span></button>
+    </header>
+    <nav class="page-nav" aria-label="Interlude 页面">
+      <a class="active" aria-current="page" href="/#/plugin-page/astrbot_plugin_interlude/dashboard" target="_top">总览</a>
+      <a href="/#/plugin-page/astrbot_plugin_interlude/story" target="_top">故事</a>
+      <a href="/#/plugin-page/astrbot_plugin_interlude/memory" target="_top">记忆</a>
+      <a href="/#/plugin-page/astrbot_plugin_interlude/schedule" target="_top">日程</a>
+    </nav>
+    <section class="toolbar" aria-label="浏览选项">
+      <label class="field story-field" for="story"><span>当前故事</span><select id="story" aria-label="当前故事"></select></label>
+      <label class="field search-field" for="filter"><span>查找事件</span><input id="filter" type="search" placeholder="搜索最近事件" autocomplete="off"></label>
+      <span id="story-count" class="story-count" aria-live="polite"></span>
+    </section>
+    <div id="content" aria-live="polite"></div>
+    <footer>Interlude · 持续生活叙事</footer>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
