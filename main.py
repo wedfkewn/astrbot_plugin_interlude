@@ -226,6 +226,7 @@ class Interlude(Star):
         scene = await self.db.one("SELECT * FROM scenes WHERE story_id=?", (story_id,))
         return json_response({"story": dict(story), "scene": dict(scene) if scene else None,
                               "current_time": datetime.now(timezone.utc).isoformat(),
+                              "timezone": str(self.config.get("timezone", "Asia/Shanghai")),
                               "scheduler": {"running": bool(self.scheduler.task and not self.scheduler.task.done()),
                                             "last_error": self.scheduler.last_error},
                               "entries": [dict(x) for x in entries], "facts": [dict(x) for x in facts],
