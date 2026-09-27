@@ -6,9 +6,12 @@ import asyncio
 import hashlib
 import json
 import secrets
+import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import aiosqlite
 
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
@@ -24,6 +27,7 @@ except ImportError:  # AstrBot 4.24.x uses Quart-backed plugin routes.
     from quart import request
 
 from .models import EventType, StoryEvent
+from .backup import MAX_BACKUP_BYTES, export_story, restore_story, validate_backup
 from .narrative import NarrativeEngine
 from .runtime import DeliveryEngine, EventRouter, RuntimeScheduler
 from .services import MemoryService, SchedulePlanner, ScheduleService
@@ -48,11 +52,15 @@ class Interlude(Star):
         self.start_lock = asyncio.Lock()
         self.started = False
         self.page_challenges: dict[str, tuple[str, str, str, str | None, float]] = {}
+        self.backup_previews: dict[str, tuple[str | None, float, dict]] = {}
         if hasattr(context, "register_web_api"):
             context.register_web_api(f"/{PLUGIN_NAME}/snapshot", self.page_snapshot, ["GET"], "Interlude snapshot")
             context.register_web_api(f"/{PLUGIN_NAME}/stories", self.page_stories, ["GET"], "Interlude stories")
             context.register_web_api(f"/{PLUGIN_NAME}/challenge", self.page_challenge, ["POST"], "Interlude action challenge")
             context.register_web_api(f"/{PLUGIN_NAME}/action", self.page_action, ["POST"], "Interlude confirmed action")
+            context.register_web_api(f"/{PLUGIN_NAME}/backup/export", self.page_backup_export, ["GET"], "Export story backup")
+            context.register_web_api(f"/{PLUGIN_NAME}/backup/preview", self.page_backup_preview, ["POST"], "Preview story backup")
+            context.register_web_api(f"/{PLUGIN_NAME}/backup/restore", self.page_backup_restore, ["POST"], "Restore story backup")
 
     def _log(self, phase: str, detail: str) -> None:
         if self.config.get("debug_logging", False) or phase in {"EVENT", "DELIVERY", "SCHEDULER"}:
@@ -74,6 +82,7 @@ class Interlude(Star):
         await self._start()
 
     async def terminate(self):
+        self.backup_previews.clear()
         if self.started:
             await self.scheduler.close()
             await self.router.close()
@@ -121,10 +130,8 @@ class Interlude(Star):
             return configured
         return configured + ":" + hashlib.sha256(umo.encode()).hexdigest()[:16]
 
-    async def _ensure_story(self, umo: str, user_id: str, name: str) -> tuple[str, str]:
-        await self._start()
-        story_id = self._story_id(umo)
-        character = {
+    def _character_config(self) -> dict:
+        return {
             "id": str(self.config.get("character_id", "interlude")),
             "name": str(self.config.get("character_name", "角色")),
             "profile": str(self.config.get("character_profile", "")),
@@ -137,6 +144,11 @@ class Interlude(Star):
             "default_schedule": str(self.config.get("character_default_schedule", "")),
             "timezone": str(self.config.get("timezone", "Asia/Shanghai")),
         }
+
+    async def _ensure_story(self, umo: str, user_id: str, name: str) -> tuple[str, str]:
+        await self._start()
+        story_id = self._story_id(umo)
+        character = self._character_config()
         await self.db.ensure_story(story_id, character["id"], character, {"world_description": self.config.get("world_description", "")})
         participant_id = await self.db.ensure_participant(story_id, umo.split(":", 1)[0], user_id, umo, name)
         return story_id, participant_id
@@ -239,6 +251,67 @@ class Interlude(Star):
         await self._start()
         rows = await self.db.all("SELECT id,cursor,paused FROM stories ORDER BY id LIMIT 100")
         return json_response({"stories": [dict(x) for x in rows]})
+
+    async def page_backup_export(self):
+        await self._start()
+        query = request.query if hasattr(request, "query") else request.args
+        story_id = str(query.get("story_id", ""))
+        if not story_id:
+            return json_response({"error": "story id required"})
+        try:
+            async with self.router.locks[story_id]:
+                backup = await export_story(self.db, story_id)
+        except ValueError as exc:
+            return json_response({"error": str(exc)})
+        return json_response(backup)
+
+    async def page_backup_preview(self):
+        await self._start()
+        upload = (await request.files()).get("file")
+        if upload is None or not callable(getattr(upload, "save", None)):
+            return json_response({"error": "missing backup file"})
+        if getattr(upload, "size", 0) and upload.size > MAX_BACKUP_BYTES:
+            return json_response({"error": "backup exceeds 20 MiB"})
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "uploaded.json"
+                await upload.save(path)
+                if path.stat().st_size > MAX_BACKUP_BYTES:
+                    return json_response({"error": "backup exceeds 20 MiB"})
+                backup = json.loads(path.read_text(encoding="utf-8"))
+            summary = await validate_backup(self.db, backup)
+        except (ValueError, UnicodeError, OSError, TypeError) as exc:
+            return json_response({"error": f"invalid backup: {exc}"})
+        self.backup_previews = {key: item for key, item in self.backup_previews.items()
+                                if item[1] > time.monotonic()}
+        token = secrets.token_urlsafe(32)
+        self.backup_previews[token] = (getattr(request, "username", None), time.monotonic() + 300, backup)
+        summary["exists"] = bool(await self.db.one("SELECT id FROM stories WHERE id=?", (summary["story_id"],)))
+        return json_response({"token": token, **summary, "expires_seconds": 300})
+
+    async def page_backup_restore(self):
+        await self._start()
+        payload = await request.get_json(silent=True) if hasattr(request, "get_json") else await request.json(default={})
+        if not isinstance(payload, dict) or payload.get("confirmation") != "CONFIRM":
+            return json_response({"error": "confirmation required"})
+        token = str(payload.get("token", ""))
+        pending = self.backup_previews.pop(token, None)
+        if not pending or pending[1] < time.monotonic() or pending[0] != getattr(request, "username", None):
+            return json_response({"error": "backup preview expired"})
+        backup = pending[2]
+        story_id = backup["story_id"]
+        if payload.get("story_id") != story_id:
+            return json_response({"error": "story id mismatch"})
+        await self.router.debouncer.cancel_story(story_id)
+        try:
+            async with self.router.locks[story_id]:
+                summary = await restore_story(
+                    self.db, backup, self._character_config(),
+                    {"world_description": self.config.get("world_description", "")},
+                )
+        except (ValueError, aiosqlite.IntegrityError) as exc:
+            return json_response({"error": f"restore failed: {exc}"})
+        return json_response({"ok": True, **summary})
 
     async def _clear_story(self, story_id: str, *, purge: bool) -> None:
         await self.router.debouncer.cancel_story(story_id)

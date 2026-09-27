@@ -1,3 +1,28 @@
-<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Interlude Story</title><link rel="stylesheet" href="./style.css"><main><header><h1>Interlude · Story</h1><button id="refresh">刷新</button></header><label>故事 <select id="story"></select></label><label>筛选 <input id="filter" placeholder="输入关键词"></label><div id="content" data-view="story"></div></main><script type="module" src="./app.js"></script></html>
-
-
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Interlude · 故事</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<main>
+  <header><h1>Interlude · 故事</h1><button id="refresh" type="button">刷新</button></header>
+  <label>故事 <select id="story"></select></label>
+  <label>筛选 <input id="filter" placeholder="输入关键词"></label>
+  <section class="card backup-tools">
+    <strong>故事备份与恢复</strong>
+    <p>导出当前故事的剧情与衍生数据。恢复会覆盖备份所属故事；角色和世界设定以当前插件配置为准，未完成的发送任务不会补发。备份含聊天内容，请妥善保管。</p>
+    <div class="backup-controls">
+      <button id="backup-export" type="button">导出当前故事</button>
+      <label>选择备份文件 <input id="backup-file" type="file" accept=".json,application/json"></label>
+      <button id="backup-preview-button" type="button">预览恢复内容</button>
+    </div>
+    <div id="backup-preview" aria-live="polite"></div>
+  </section>
+  <div id="content" data-view="story"></div>
+</main>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
