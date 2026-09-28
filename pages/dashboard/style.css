@@ -43,6 +43,11 @@ h1 { margin: 0; font-size: clamp(28px, 4vw, 38px); line-height: 1.22; letter-spa
 .panel-kicker { margin: 0 0 8px; color: var(--accent); font-size: 12px; font-weight: 750; }
 .scene-text { margin: 0; font-size: 19px; line-height: 1.55; font-weight: 650; overflow-wrap: anywhere; }
 .scene-meta { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 13px; color: var(--muted); font-size: 12px; }
+.emotion-panel { padding: 18px 22px; border-color: var(--accent); background: linear-gradient(120deg, var(--surface), var(--accent-soft)); }
+.emotion-name { margin: 0; font-size: 23px; font-weight: 750; }
+.emotion-reason { margin: 5px 0 12px; color: var(--muted); overflow-wrap: anywhere; }
+.emotion-strength { display: flex; align-items: center; gap: 14px; color: var(--muted); font-size: 12px; }
+.emotion-progress { width: min(220px, 60%); height: 10px; accent-color: var(--accent); }
 .status-pill { display: inline-flex; padding: 3px 9px; border-radius: 100px; background: #e6f3ec; color: #267149; font-weight: 700; }
 .status-pill.paused { background: #fff1df; color: #94611d; }
 .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
