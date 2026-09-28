@@ -5,6 +5,23 @@ const content = document.getElementById('content');
 const refreshButton = document.getElementById('refresh');
 const count = document.getElementById('story-count');
 let activeTimeZone = 'Asia/Shanghai';
+const views = new Set(['dashboard', 'story', 'memory', 'schedule']);
+
+function currentView() {
+  const name = window.location.hash.replace(/^#\/?/, '');
+  return views.has(name) ? name : 'dashboard';
+}
+
+function syncNavigation() {
+  const view = currentView();
+  for (const link of document.querySelectorAll('.page-nav a')) {
+    const active = link.dataset.view === view;
+    link.classList.toggle('active', active);
+    if (active) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  }
+  search.placeholder = view === 'dashboard' || view === 'story' ? '搜索最近事件' : '搜索当前页面';
+}
 
 function element(tag, className = '', value = '') {
   const item = document.createElement(tag);
@@ -58,6 +75,11 @@ function detail(label, value, note = '') {
 }
 
 function renderEmpty() {
+  if (currentView() !== 'dashboard') {
+    const titles = {story: '还没有故事', memory: '还没有记忆', schedule: '还没有日程'};
+    message(titles[currentView()], '与角色交流后，这里会显示对应的记录。', '✦');
+    return;
+  }
   const panel = message('还没有故事', '与角色的第一段私聊会创建故事，此后这里会显示场景、状态与最近事件。', '✦');
   const steps = element('div', 'steps');
   for (const [number, description] of [
@@ -157,6 +179,99 @@ function renderDashboard(data) {
 
   renderMaintenance(true);
   applyFilter();
+}
+
+function recordCard(title, body, note = '') {
+  const card = element('section', 'panel record-card');
+  card.dataset.search = `${title} ${body} ${note}`.toLowerCase();
+  card.append(element('h3', '', title), element('p', '', body));
+  if (note) card.append(element('small', '', note));
+  content.append(card);
+  return card;
+}
+
+function addManagedAction(card, label, action, itemId = '') {
+  const button = element('button', 'secondary-button', label);
+  button.type = 'button';
+  button.addEventListener('click', () => {
+    content.querySelector('.inline-confirmation')?.remove();
+    const storyId = selector.value;
+    const confirmation = element('div', 'inline-confirmation');
+    confirmation.append(element('p', '', `确认对故事「${storyId}」执行「${label}」？输入 CONFIRM。`));
+    if (action === 'story_purge') confirmation.append(element('p', '', '若当前配置仍指向此故事，新消息会重新创建它。'));
+    const input = element('input');
+    input.setAttribute('aria-label', '输入 CONFIRM 确认操作');
+    input.autocomplete = 'off';
+    const submit = element('button', 'danger-button', '确认执行');
+    submit.type = 'button';
+    submit.disabled = true;
+    input.addEventListener('input', () => { submit.disabled = input.value !== 'CONFIRM'; });
+    const cancel = element('button', '', '取消');
+    cancel.type = 'button';
+    cancel.addEventListener('click', () => confirmation.remove());
+    submit.addEventListener('click', async () => {
+      if (input.value !== 'CONFIRM') return;
+      submit.disabled = true;
+      try {
+        const challenge = await bridge.apiPost('challenge', {action, story_id: storyId, item_id: itemId});
+        if (challenge.error) throw new Error(challenge.error);
+        const result = await bridge.apiPost('action', {token: challenge.token, confirmation: 'CONFIRM'});
+        if (result.error) throw new Error(result.error);
+        await refresh();
+        if (action === 'story_purge') content.prepend(element('p', 'inline-empty', `故事「${storyId}」已删除。`));
+      } catch (error) {
+        confirmation.append(element('p', 'action-error', `操作失败：${error.message}`));
+        submit.disabled = false;
+      }
+    });
+    confirmation.append(input, submit, cancel);
+    card.append(confirmation);
+    input.focus();
+  });
+  card.append(button);
+}
+
+function renderStory(data) {
+  section('故事', '最近 50 条事件');
+  recordCard('当前场景', data.scene?.summary || '尚无摘要', dateLabel(data.scene?.last_activity_at));
+  const maintenance = recordCard('故事维护', '重置会清空剧情但保留角色和参与者；永久删除会移除整个故事。');
+  addManagedAction(maintenance, '重置故事', 'story_reset');
+  addManagedAction(maintenance, '永久删除故事', 'story_purge');
+  const timeline = element('div', 'panel timeline');
+  const entries = (data.entries || []).slice().reverse();
+  if (!entries.length) timeline.append(element('p', 'inline-empty', '还没有故事事件。'));
+  for (const item of entries) {
+    const row = element('article', 'timeline-item');
+    row.dataset.search = `${item.event_type || ''} ${item.content || ''}`.toLowerCase();
+    const body = element('div');
+    body.append(element('p', 'event-content', item.content || '无文字内容'), element('time', 'event-time', dateLabel(item.occurred_at)));
+    row.append(element('div', 'event-type', item.event_type || '事件'), body);
+    timeline.append(row);
+  }
+  content.append(timeline);
+}
+
+function renderMemory(data) {
+  section('记忆', '事实、关系与演化层');
+  for (const item of data.facts || []) {
+    const card = recordCard(item.scope, item.content, item.status);
+    if (item.status === 'active') addManagedAction(card, '归档记忆', 'memory_delete', item.id);
+  }
+  for (const item of data.overlays || []) recordCard(`Overlay · ${item.scope}`, item.content, item.status);
+  for (const item of data.perspectives || []) recordCard('Perspective', item.content, item.status);
+  for (const item of data.relationships || []) recordCard(`Relationship · ${item.participant_id}`, item.summary || '暂无文字摘要');
+  if ((data.overlays || []).some(item => item.status === 'active')) {
+    addManagedAction(recordCard('演化层维护', '清除所有 Overlay 与 Perspective。'), '清除演化层', 'overlay_clear');
+  }
+  if (!content.querySelector('.record-card')) content.append(element('p', 'inline-empty', '暂无记忆。'));
+}
+
+function renderSchedule(data) {
+  section('日程', '计划、意图与任务');
+  for (const item of data.schedules || []) recordCard(item.kind, item.content, `${dateLabel(item.start_at)} → ${dateLabel(item.end_at)}`);
+  for (const item of data.intents || []) recordCard(item.type, item.content, `${dateLabel(item.due_at)} · ${item.status}`);
+  for (const item of data.jobs || []) recordCard(`任务 · ${item.kind}`, item.id, `${dateLabel(item.due_at)} · ${item.status}`);
+  if (!content.querySelector('.record-card')) content.append(element('p', 'inline-empty', '暂无日程或任务。'));
 }
 
 function renderMaintenance(hasStory) {
@@ -291,7 +406,7 @@ function renderMaintenance(hasStory) {
 
 function applyFilter() {
   const term = search.value.trim().toLowerCase();
-  const rows = [...content.querySelectorAll('.timeline-item')];
+  const rows = [...content.querySelectorAll('[data-search]')];
   let shown = 0;
   for (const row of rows) {
     row.hidden = Boolean(term && !row.dataset.search.includes(term));
@@ -300,12 +415,13 @@ function applyFilter() {
   const existing = content.querySelector('.filter-empty');
   if (existing) existing.remove();
   if (term && rows.length && !shown) {
-    const empty = element('p', 'inline-empty filter-empty', '没有匹配的最近事件。');
-    content.querySelector('.timeline').append(empty);
+    const empty = element('p', 'inline-empty filter-empty', '没有匹配的内容。');
+    (content.querySelector('.timeline') || content).append(empty);
   }
 }
 
 async function refresh(preferredStory = '') {
+  syncNavigation();
   refreshButton.disabled = true;
   content.replaceChildren(element('p', 'inline-empty', '正在加载故事…'));
   try {
@@ -331,7 +447,12 @@ async function refresh(preferredStory = '') {
     if (data.error) throw new Error(data.error);
     activeTimeZone = data.timezone || 'Asia/Shanghai';
     content.replaceChildren();
-    renderDashboard(data);
+    const view = currentView();
+    if (view === 'dashboard') renderDashboard(data);
+    else {
+      ({story: renderStory, memory: renderMemory, schedule: renderSchedule})[view](data);
+      applyFilter();
+    }
   } catch (error) {
     message('暂时无法载入故事', `请检查插件状态后重试：${error.message}`, '!');
   } finally {
@@ -342,5 +463,6 @@ async function refresh(preferredStory = '') {
 refreshButton.addEventListener('click', () => refresh());
 selector.addEventListener('change', () => refresh());
 search.addEventListener('input', applyFilter);
+window.addEventListener('hashchange', () => refresh());
 setInterval(updateLiveClock, 1000);
 await refresh();

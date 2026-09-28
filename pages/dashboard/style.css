@@ -60,6 +60,14 @@ h1 { margin: 0; font-size: clamp(28px, 4vw, 38px); line-height: 1.22; letter-spa
 .detail h3 { margin: 0 0 7px; color: var(--muted); font-size: 12px; font-weight: 650; }
 .detail p { margin: 0; font-weight: 650; overflow-wrap: anywhere; }
 .detail small { display: block; margin-top: 5px; color: var(--muted); overflow-wrap: anywhere; }
+.record-card { padding: 17px 20px; margin-bottom: 10px; overflow-wrap: anywhere; }
+.record-card h3 { margin: 0 0 5px; font-size: 15px; }
+.record-card p { margin: 0; white-space: pre-wrap; }
+.record-card small { display: block; margin-top: 6px; color: var(--muted); }
+.secondary-button, .inline-confirmation button { margin: 10px 8px 0 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.inline-confirmation { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; }
+.inline-confirmation input { width: min(180px, 100%); padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.inline-confirmation .action-error { color: #9b3434; margin-top: 8px; }
 .timeline { overflow: hidden; }
 .timeline-item { display: grid; grid-template-columns: 122px minmax(0, 1fr); gap: 18px; padding: 15px 20px; border-top: 1px solid var(--line); }
 .timeline-item:first-child { border-top: 0; }
