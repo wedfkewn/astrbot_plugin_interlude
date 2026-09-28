@@ -78,7 +78,29 @@ function renderEmpty() {
   retry.addEventListener('click', () => refresh());
   actions.append(settings, retry);
   panel.append(steps, actions);
+  renderEmotion({});
   renderMaintenance(false);
+}
+
+function renderEmotion(state) {
+  section('角色情绪', '当前故事');
+  const panel = element('section', 'panel emotion-panel');
+  const emotion = state.emotion || '尚未记录';
+  const intensity = Math.max(0, Math.min(5, Number(state.emotion_intensity) || 0));
+  panel.append(
+    element('p', 'emotion-name', emotion),
+    element('p', 'emotion-reason', state.emotion
+      ? `缘由 · ${state.emotion_reason || '暂无明确缘由'}`
+      : '与角色交流后，情绪会根据实际剧情更新。'),
+  );
+  const strength = element('div', 'emotion-strength');
+  const progress = element('progress', 'emotion-progress');
+  progress.max = 5;
+  progress.value = intensity;
+  progress.setAttribute('aria-label', '情绪强度');
+  strength.append(element('span', '', `强度 ${state.emotion ? `${intensity}/5` : '未记录'}`), progress);
+  panel.append(strength);
+  content.append(panel);
 }
 
 function renderDashboard(data) {
@@ -96,6 +118,7 @@ function renderDashboard(data) {
   if (data.scene?.last_activity_at) sceneMeta.append(element('span', '', `最近活动 · ${dateLabel(data.scene.last_activity_at)}`));
   scene.append(sceneMeta);
   content.append(scene);
+  renderEmotion(state);
 
   section('运行概览', '故事与调度器状态');
   const metrics = element('div', 'metrics');
@@ -115,7 +138,6 @@ function renderDashboard(data) {
     detail('角色此刻', state.activity || '暂无活动记录', state.location ? `地点 · ${state.location}` : '地点暂未记录'),
     clockDetail,
     detail('世界状态', state.world_state || '世界状态暂未记录'),
-    detail('角色情绪', state.emotion || '尚未记录', state.emotion ? `强度 ${state.emotion_intensity ?? 0}/5 · ${state.emotion_reason || '无明确缘由'}` : '随着剧情自然变化'),
   );
   content.append(details);
 
