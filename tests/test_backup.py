@@ -2,6 +2,7 @@
 
 import asyncio
 import copy
+import json
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,8 @@ async def populated(tmp_path: Path):
 def test_round_trip_replaces_only_selected_story_and_cancels_pending(tmp_path):
     async def scenario():
         db, pid = await populated(tmp_path)
+        await db.execute("UPDATE stories SET state_json=? WHERE id='one'",
+                         (json.dumps({"emotion": "期待", "emotion_intensity": 3, "emotion_reason": "收到邀请"}),))
         await db.ensure_story("two", "other", {"id": "other", "name": "Other"}, {})
         backup = await export_story(db, "one")
         assert (await validate_backup(db, backup))["counts"]["story_entries"] == 1
@@ -51,6 +54,8 @@ def test_round_trip_replaces_only_selected_story_and_cancels_pending(tmp_path):
         assert (await db.one("SELECT id FROM stories WHERE id='two'")) is not None
         assert (await db.one("SELECT data_json FROM characters WHERE id='character'"))["data_json"].find('Current') > 0
         assert (await db.one("SELECT world_json FROM stories WHERE id='one'"))["world_json"].find('current') > 0
+        restored_state = json.loads((await db.one("SELECT state_json FROM stories WHERE id='one'"))["state_json"])
+        assert restored_state == {"emotion": "期待", "emotion_intensity": 3, "emotion_reason": "收到邀请"}
         await db.close()
     run(scenario())
 

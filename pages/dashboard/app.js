@@ -75,9 +75,10 @@ function renderEmpty() {
   settings.target = '_top';
   const retry = element('button', '', '重新检查');
   retry.type = 'button';
-  retry.addEventListener('click', refresh);
+  retry.addEventListener('click', () => refresh());
   actions.append(settings, retry);
   panel.append(steps, actions);
+  renderMaintenance(false);
 }
 
 function renderDashboard(data) {
@@ -114,6 +115,7 @@ function renderDashboard(data) {
     detail('角色此刻', state.activity || '暂无活动记录', state.location ? `地点 · ${state.location}` : '地点暂未记录'),
     clockDetail,
     detail('世界状态', state.world_state || '世界状态暂未记录'),
+    detail('角色情绪', state.emotion || '尚未记录', state.emotion ? `强度 ${state.emotion_intensity ?? 0}/5 · ${state.emotion_reason || '无明确缘由'}` : '随着剧情自然变化'),
   );
   content.append(details);
 
@@ -131,12 +133,17 @@ function renderDashboard(data) {
   }
   content.append(timeline);
 
+  renderMaintenance(true);
+  applyFilter();
+}
+
+function renderMaintenance(hasStory) {
   section('故事维护');
   const maintenance = element('section', 'panel maintenance-panel');
   const explanation = element('div');
   explanation.append(
-    element('h3', '', '恢复当前故事的初始状态'),
-    element('p', '', '清空剧情、记忆、关系、日程与待发送任务；保留角色设定、世界设定和参与者。此操作无法撤销。'),
+    element('h3', '', hasStory ? '管理当前故事' : '从备份恢复故事'),
+    element('p', '', hasStory ? '格式化会清空剧情、记忆、关系、日程与待发送任务，保留角色设定、世界设定和参与者。' : '选择 JSON 备份，可重建已删除的故事。'),
   );
   const resetButton = element('button', 'danger-button', '格式化当前故事');
   resetButton.type = 'button';
@@ -175,9 +182,83 @@ function renderDashboard(data) {
     maintenance.append(confirmation);
     input.focus();
   });
-  maintenance.append(explanation, resetButton);
+  const buttons = element('div', 'maintenance-actions');
+  if (hasStory) buttons.append(resetButton);
+  const exportButton = element('button', '', '导出备份');
+  exportButton.type = 'button';
+  exportButton.disabled = !hasStory;
+  buttons.append(exportButton);
+  const restoreButton = element('button', '', '恢复备份');
+  restoreButton.type = 'button';
+  buttons.append(restoreButton);
+  const fileInput = element('input');
+  fileInput.type = 'file';
+  fileInput.accept = '.json,application/json';
+  fileInput.hidden = true;
+  fileInput.setAttribute('aria-label', '选择故事备份文件');
+  const feedback = element('div', 'maintenance-feedback');
+  feedback.setAttribute('aria-live', 'polite');
+  const showFeedback = (text, error = false) => feedback.replaceChildren(element('p', error ? 'error-text' : '', text));
+  exportButton.addEventListener('click', async () => {
+    const storyId = selector.value;
+    if (!storyId) return;
+    exportButton.disabled = true;
+    try {
+      const backup = await bridge.apiGet('backup/export', {story_id: storyId});
+      if (backup.error) throw new Error(backup.error);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], {type: 'application/json'}));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `interlude-${storyId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)}-${Date.now()}.json`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      showFeedback(`已导出故事「${storyId}」，文件包含聊天内容，请妥善保管。`);
+    } catch (error) { showFeedback(`导出失败：${error.message}`, true); }
+    finally { exportButton.disabled = false; }
+  });
+  restoreButton.addEventListener('click', () => { fileInput.value = ''; fileInput.click(); });
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) { showFeedback('备份文件不能超过 20 MiB。', true); return; }
+    restoreButton.disabled = true;
+    showFeedback('正在检查备份…');
+    try {
+      const preview = await bridge.upload('backup/preview', file);
+      if (preview.error) throw new Error(preview.error);
+      const panel = element('div', 'confirmation backup-confirmation');
+      panel.append(
+        element('p', '', `备份故事：${preview.story_id} · 导出时间：${dateLabel(preview.exported_at)}`),
+        element('p', '', `事件 ${preview.counts.story_entries}、记忆 ${preview.counts.facts}、参与者 ${preview.counts.participants}、日程 ${preview.counts.schedules}`),
+        element('p', '', preview.exists ? '将覆盖此故事现有数据。' : '将重新创建已删除的故事。'),
+        element('p', '', '当前角色与世界设定优先；旧的未完成任务不会补发。输入 CONFIRM 确认，预览 5 分钟后失效。'),
+      );
+      const input = element('input');
+      input.setAttribute('aria-label', '输入 CONFIRM 确认恢复');
+      input.autocomplete = 'off';
+      const submit = element('button', 'danger-button', '确认恢复');
+      submit.type = 'button';
+      submit.disabled = true;
+      input.addEventListener('input', () => { submit.disabled = input.value !== 'CONFIRM'; });
+      submit.addEventListener('click', async () => {
+        if (input.value !== 'CONFIRM') return;
+        submit.disabled = true;
+        try {
+          const result = await bridge.apiPost('backup/restore', {
+            token: preview.token, story_id: preview.story_id, confirmation: 'CONFIRM',
+          });
+          if (result.error) throw new Error(result.error);
+          await refresh(preview.story_id);
+        } catch (error) { panel.append(element('p', 'error-text', `恢复失败：${error.message}。请重新选择备份文件。`)); }
+      });
+      feedback.replaceChildren(panel);
+    } catch (error) { showFeedback(`备份检查失败：${error.message}`, true); }
+    finally { restoreButton.disabled = false; }
+  });
+  maintenance.append(explanation, buttons, fileInput, feedback);
   content.append(maintenance);
-  applyFilter();
 }
 
 function applyFilter() {
@@ -196,7 +277,7 @@ function applyFilter() {
   }
 }
 
-async function refresh() {
+async function refresh(preferredStory = '') {
   refreshButton.disabled = true;
   content.replaceChildren(element('p', 'inline-empty', '正在加载故事…'));
   try {
@@ -204,7 +285,7 @@ async function refresh() {
     await bridge.ready();
     const stories = await bridge.apiGet('stories');
     if (stories.error) throw new Error(stories.error);
-    const previous = selector.value;
+    const previous = preferredStory || selector.value;
     const list = stories.stories || [];
     selector.replaceChildren(...list.map(story => {
       const option = document.createElement('option');
@@ -230,8 +311,8 @@ async function refresh() {
   }
 }
 
-refreshButton.addEventListener('click', refresh);
-selector.addEventListener('change', refresh);
+refreshButton.addEventListener('click', () => refresh());
+selector.addEventListener('change', () => refresh());
 search.addEventListener('input', applyFilter);
 setInterval(updateLiveClock, 1000);
 await refresh();

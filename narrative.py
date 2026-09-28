@@ -175,6 +175,8 @@ class NarrativeEngine:
             "角色拟发送内容只能写在 interaction.reply.messages 或 intents，未实际发送不得写成已说过。"
             "补写 story_cursor 到 current_time 中有意义的变化。允许不回复、不主动联系。"
             "事实与关系变化要保守，不能替用户或角色编造已发生的发送。"
+            "角色情绪写入 state_update.emotion、emotion_intensity（0到5）和 emotion_reason；仅在已发生的事件足以改变情绪时更新，"
+            "否则保留 current_state 的原值。情绪会影响表达方式，但不得改变固定角色身份，也不能把猜测当作事实。"
             "群聊仅在自然合适且意愿足够时发言；图片观察只是本轮所见，不要保存图片数据。"
             "Agency 表示现实条件；如设备不在身边、正在忙或缺乏隐私，可以延迟或不回复。"
         )

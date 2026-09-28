@@ -80,6 +80,37 @@ def test_group_willingness_and_state(tmp_path):
     run(scenario())
 
 
+def test_emotion_persists_in_story_context_and_reset_clears_it(tmp_path):
+    async def scenario():
+        prompts = []
+
+        async def generate(_provider, _system, prompt, _umo):
+            prompts.append(json.loads(prompt))
+            if len(prompts) == 1:
+                return json.dumps({"state_update": {"emotion": "期待", "emotion_intensity": 3,
+                                                     "emotion_reason": "约好了见面"}})
+            if len(prompts) == 3:
+                return json.dumps({"state_update": {"emotion": "平静"}})
+            return '{}'
+
+        db, pid, _, router, _ = await runtime(tmp_path, generate)
+        await router.route(StoryEvent("s", EventType.USER_MESSAGE, "周末见", pid))
+        await router.route(StoryEvent("s", EventType.USER_MESSAGE, "好", pid))
+        state = json.loads((await db.one("SELECT state_json FROM stories WHERE id='s'"))["state_json"])
+        assert state["emotion"] == "期待"
+        assert state["emotion_intensity"] == 3
+        assert state["emotion_reason"] == "约好了见面"
+        assert prompts[1]["context"]["current_state"]["emotion"] == "期待"
+        await router.route(StoryEvent("s", EventType.USER_MESSAGE, "取消约定", pid))
+        state = json.loads((await db.one("SELECT state_json FROM stories WHERE id='s'"))["state_json"])
+        assert (state["emotion"], state["emotion_intensity"], state["emotion_reason"]) == ("平静", 0, "")
+        await db.clear_story("s", purge=False)
+        assert json.loads((await db.one("SELECT state_json FROM stories WHERE id='s'"))["state_json"]) == {}
+        await router.close()
+        await db.close()
+    run(scenario())
+
+
 def test_image_observation_stays_transient(tmp_path):
     async def scenario():
         prompts = []

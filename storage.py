@@ -320,6 +320,9 @@ class Database:
             existing_state = await self.one("SELECT state_json FROM stories WHERE id=?", (story_id,))
             state = json.loads(existing_state["state_json"])
             patch = result.state_update.model_dump(exclude_unset=True) if result.state_update else {}
+            if "emotion" in patch and patch["emotion"] != state.get("emotion"):
+                patch.setdefault("emotion_intensity", 0)
+                patch.setdefault("emotion_reason", "")
             state.update(patch)
             await db.execute("UPDATE stories SET cursor=?,state_json=? WHERE id=?",
                              (cursor, json.dumps(state, ensure_ascii=False), story_id))
