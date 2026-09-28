@@ -233,6 +233,11 @@ class Interlude(Star):
         entries = await self.db.recent_events(story_id, 50)
         facts = await self.db.all("SELECT id,scope,content,status FROM facts WHERE story_id=? ORDER BY created_at DESC LIMIT 50", (story_id,))
         intents = await self.db.all("SELECT id,type,content,due_at,status FROM intents WHERE story_id=? ORDER BY due_at LIMIT 50", (story_id,))
+        proactive = await self.db.all(
+            "SELECT i.id,i.content,i.reason,i.due_at,i.status,i.created_at,p.display_name,p.platform_user_id,"
+            "(SELECT MAX(d.sent_at) FROM deliveries d WHERE d.intent_id=i.id AND d.status='sent') AS sent_at "
+            "FROM intents i LEFT JOIN participants p ON p.id=i.participant_id "
+            "WHERE i.story_id=? AND i.type='proactive' ORDER BY i.created_at DESC LIMIT 10", (story_id,))
         schedules = await self.db.all("SELECT id,kind,content,start_at,end_at FROM schedules WHERE story_id=? ORDER BY start_at LIMIT 50", (story_id,))
         overlays = await self.db.all("SELECT id,scope,content,status FROM overlays WHERE story_id=? ORDER BY created_at DESC LIMIT 50", (story_id,))
         perspectives = await self.db.all("SELECT id,content,status FROM perspectives WHERE story_id=? ORDER BY created_at DESC LIMIT 50", (story_id,))
@@ -248,6 +253,10 @@ class Interlude(Star):
                                             "last_error": self.scheduler.last_error},
                               "entries": [dict(x) for x in entries], "facts": [dict(x) for x in facts],
                               "intents": [dict(x) for x in intents], "schedules": [dict(x) for x in schedules],
+                              "proactive": {"enabled": bool(self.config.get("proactive_enabled", False)),
+                                            "idle_enabled": bool(self.config.get("proactive_idle_enabled", False)),
+                                            "idle_minutes": max(30, int(self.config.get("proactive_idle_minutes", 1200))),
+                                            "records": [dict(x) for x in proactive]},
                               "jobs": [dict(x) for x in jobs],
                               "overlays": [dict(x) for x in overlays], "perspectives": [dict(x) for x in perspectives],
                               "relationships": [dict(x) for x in relationships]})

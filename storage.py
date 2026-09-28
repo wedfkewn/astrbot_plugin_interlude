@@ -246,6 +246,10 @@ class Database:
             row = await self.one("SELECT generation_id FROM stories WHERE id=?", (story_id,))
             if not row or row["generation_id"] != generation_id:
                 raise RuntimeError("stale generation")
+            if event.event_type.value == "PROACTIVE_CHECK":
+                participant = await self.one("SELECT last_interaction_at FROM participants WHERE id=?", (event.participant_id,))
+                if not participant or participant["last_interaction_at"] != event.metadata.get("last_user_at"):
+                    raise RuntimeError("stale proactive check")
             previous_cursor = await self.one("SELECT cursor FROM stories WHERE id=?", (story_id,))
             earliest = datetime.fromisoformat(previous_cursor["cursor"])
             latest = datetime.fromisoformat(cursor)

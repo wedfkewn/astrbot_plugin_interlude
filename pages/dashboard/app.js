@@ -101,6 +101,7 @@ function renderEmpty() {
   actions.append(settings, retry);
   panel.append(steps, actions);
   renderEmotion({});
+  renderProactive({});
   renderMaintenance(false);
 }
 
@@ -125,6 +126,30 @@ function renderEmotion(state) {
   content.append(panel);
 }
 
+function renderProactive(proactive) {
+  section('主动聊天', '触发缘由与发送状态');
+  const panel = element('section', 'panel proactive-panel');
+  const enabled = Boolean(proactive.enabled);
+  const idle = Boolean(proactive.idle_enabled);
+  panel.append(element('p', 'proactive-state', !enabled ? '主动消息未开启'
+    : idle ? `静默触发已开启 · 至少 ${proactive.idle_minutes || 1200} 分钟` : '主动消息已开启 · 静默触发未开启'));
+  panel.append(element('p', 'proactive-hint', '在插件配置中开启主动消息、静默触发并填写平台用户 ID 白名单后，角色才会评估是否主动联系。已有的剧情主动意图也会记录在这里。'));
+  const records = proactive.records || [];
+  if (!records.length) panel.append(element('p', 'proactive-empty', '暂无主动聊天记录。'));
+  for (const item of records) {
+    const record = element('div', 'proactive-record');
+    const status = item.sent_at ? '已发送' : ({pending: '等待发送', processing: '发送中', completed: '已处理', cancelled: '已取消'})[item.status] || item.status;
+    record.append(
+      element('p', 'proactive-record-title', `${item.display_name || item.platform_user_id || '参与者'} · ${status}`),
+      element('p', 'proactive-record-reason', `主动缘由：${item.reason || '历史记录未注明缘由'}`),
+      element('p', 'proactive-record-content', `消息：${item.content}`),
+      element('small', '', item.sent_at ? `发送于 ${dateLabel(item.sent_at)}` : `计划时间 ${dateLabel(item.due_at)}`),
+    );
+    panel.append(record);
+  }
+  content.append(panel);
+}
+
 function renderDashboard(data) {
   const story = data.story || {};
   let state = {};
@@ -141,6 +166,7 @@ function renderDashboard(data) {
   scene.append(sceneMeta);
   content.append(scene);
   renderEmotion(state);
+  renderProactive(data.proactive || {});
 
   section('运行概览', '故事与调度器状态');
   const metrics = element('div', 'metrics');

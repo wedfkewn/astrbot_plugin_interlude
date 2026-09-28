@@ -409,6 +409,50 @@ def test_proactive_quiet_hours_block(tmp_path):
     run(scenario())
 
 
+def test_idle_proactive_reason_and_no_duplicate(tmp_path):
+    async def scenario():
+        due = now_iso()
+        output = {"intents": [{"type": "proactive", "content": "考试准备得怎么样？",
+                               "due_at": due, "willingness": 0.95, "reason": "昨天说过今天要考试"}],
+                  "interaction": {"reply": {"mode": "immediate", "messages": ["不应直接发送"]}}}
+        db, pid, sent, router, scheduler = await setup(
+            tmp_path, output, {"proactive_idle_enabled": True, "proactive_idle_minutes": 30})
+        past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        await db.ingest_event(StoryEvent("story", EventType.USER_MESSAGE, "明天考试", pid, created_at=past), "generation")
+        await scheduler.tick()
+        rows = await db.all("SELECT * FROM intents WHERE type='proactive'")
+        assert len(rows) == 1
+        assert rows[0]["reason"] == "静默触发 · 昨天说过今天要考试"
+        assert sent == []
+        await scheduler.tick()
+        assert sent == ["考试准备得怎么样？"]
+        assert len(await db.all("SELECT id FROM story_entries WHERE event_type='PROACTIVE_CHECK'")) == 1
+        await scheduler.tick()
+        assert sent == ["考试准备得怎么样？"]
+        await router.close()
+        await db.close()
+    run(scenario())
+
+
+def test_idle_proactive_cancelled_after_user_returns(tmp_path):
+    async def scenario():
+        output = {"intents": [{"type": "proactive", "content": "回来了吗？",
+                               "due_at": now_iso(), "willingness": 0.95}],
+                  "interaction": {"reply": {"mode": "none"}}}
+        db, pid, sent, router, scheduler = await setup(
+            tmp_path, output, {"proactive_idle_enabled": True, "proactive_idle_minutes": 30})
+        past = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        await db.ingest_event(StoryEvent("story", EventType.USER_MESSAGE, "先去忙", pid, created_at=past), "generation")
+        await scheduler.tick()
+        await db.ingest_event(StoryEvent("story", EventType.USER_MESSAGE, "我回来了", pid), "new-generation")
+        await scheduler.tick()
+        assert sent == []
+        assert (await db.one("SELECT status FROM intents WHERE type='proactive'"))["status"] == "cancelled"
+        await router.close()
+        await db.close()
+    run(scenario())
+
+
 def test_migration_reopen(tmp_path):
     async def scenario():
         db, _, _, router, _ = await setup(tmp_path)
