@@ -7,7 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from astrbot_plugin_interlude.backup import _fingerprint, export_story, restore_story, validate_backup
+from astrbot_plugin_interlude.backup import (
+    _fingerprint, export_story, list_local_backups, load_local_backup,
+    restore_story, save_local_backup, validate_backup,
+)
 from astrbot_plugin_interlude.models import EventType, StoryEvent, now_iso
 from astrbot_plugin_interlude.storage import Database
 
@@ -72,6 +75,43 @@ def test_restore_overwrites_existing_story_without_touching_another(tmp_path):
             "SELECT content FROM story_entries WHERE story_id='one' ORDER BY occurred_at"
         )] == ["hello"]
         assert (await db.one("SELECT content FROM story_entries WHERE story_id='two'"))["content"] == "other story"
+        await db.close()
+    run(scenario())
+
+
+def test_local_backup_time_points_restore_selected_snapshot(tmp_path):
+    async def scenario():
+        db, _ = await populated(tmp_path)
+        directory = tmp_path / "backups"
+        first = await save_local_backup(directory, await export_story(db, "one"))
+        await db.append_event(StoryEvent("one", EventType.USER_MESSAGE, "later"))
+        second = await save_local_backup(directory, await export_story(db, "one"))
+        listed = await list_local_backups(directory)
+        assert [item["id"] for item in listed] == [second["id"], first["id"]]
+        assert first["events"] == 1 and second["events"] == 2
+        await db.clear_story("one", purge=True)
+        selected = await load_local_backup(directory, first["id"])
+        await restore_story(db, selected, {"id": "character", "name": "Current"}, {})
+        assert [row["content"] for row in await db.all(
+            "SELECT content FROM story_entries WHERE story_id='one'"
+        )] == ["hello"]
+        with pytest.raises(ValueError, match="invalid backup id"):
+            await load_local_backup(directory, "../interlude.db")
+        await db.close()
+    run(scenario())
+
+
+def test_corrupt_local_backup_cannot_restore(tmp_path):
+    async def scenario():
+        db, _ = await populated(tmp_path)
+        directory = tmp_path / "backups"
+        saved = await save_local_backup(directory, await export_story(db, "one"))
+        path = directory / f"{saved['id']}.json"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["tables"]["story_entries"][0]["content"] = "tampered"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(ValueError, match="checksum"):
+            await validate_backup(db, await load_local_backup(directory, saved["id"]))
         await db.close()
     run(scenario())
 

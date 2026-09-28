@@ -27,7 +27,8 @@ except ImportError:  # AstrBot 4.24.x uses Quart-backed plugin routes.
     from quart import request
 
 from .models import EventType, StoryEvent
-from .backup import MAX_BACKUP_BYTES, export_story, restore_story, validate_backup
+from .backup import (MAX_BACKUP_BYTES, export_story, list_local_backups, load_local_backup,
+                     restore_story, save_local_backup, validate_backup)
 from .narrative import NarrativeEngine
 from .runtime import DeliveryEngine, EventRouter, RuntimeScheduler
 from .services import MemoryService, SchedulePlanner, ScheduleService
@@ -42,6 +43,7 @@ class Interlude(Star):
         super().__init__(context)
         self.config = config
         self.db = Database(Path(get_astrbot_data_path()) / "plugin_data" / PLUGIN_NAME / "interlude.db")
+        self.backup_dir = self.db.path.parent / "backups"
         self.engine = NarrativeEngine(self.db, config, self._generate, WorldbookAdapter(context))
         self.delivery = DeliveryEngine(self.db, config, self._send, self._log)
         self.router = EventRouter(self.db, self.engine, self.delivery, config, self._log)
@@ -61,6 +63,9 @@ class Interlude(Star):
             context.register_web_api(f"/{PLUGIN_NAME}/backup/export", self.page_backup_export, ["GET"], "Export story backup")
             context.register_web_api(f"/{PLUGIN_NAME}/backup/preview", self.page_backup_preview, ["POST"], "Preview story backup")
             context.register_web_api(f"/{PLUGIN_NAME}/backup/restore", self.page_backup_restore, ["POST"], "Restore story backup")
+            context.register_web_api(f"/{PLUGIN_NAME}/backup/save", self.page_backup_save, ["POST"], "Save local story backup")
+            context.register_web_api(f"/{PLUGIN_NAME}/backup/list", self.page_backup_list, ["GET"], "List local story backups")
+            context.register_web_api(f"/{PLUGIN_NAME}/backup/preview-local", self.page_backup_preview_local, ["POST"], "Preview local story backup")
 
     def _log(self, phase: str, detail: str) -> None:
         if self.config.get("debug_logging", False) or phase in {"EVENT", "DELIVERY", "SCHEDULER"}:
@@ -266,6 +271,42 @@ class Interlude(Star):
         except ValueError as exc:
             return json_response({"error": str(exc)})
         return json_response(backup)
+
+    async def page_backup_save(self):
+        await self._start()
+        payload = await request.get_json(silent=True) if hasattr(request, "get_json") else await request.json(default={})
+        story_id = str(payload.get("story_id", "")) if isinstance(payload, dict) else ""
+        if not story_id:
+            return json_response({"error": "story id required"})
+        try:
+            async with self.router.locks[story_id]:
+                backup = await export_story(self.db, story_id)
+            saved = await save_local_backup(self.backup_dir, backup)
+        except (ValueError, OSError) as exc:
+            return json_response({"error": f"backup failed: {exc}"})
+        return json_response({"ok": True, "backup": saved})
+
+    async def page_backup_list(self):
+        await self._start()
+        try:
+            backups = await list_local_backups(self.backup_dir)
+        except OSError as exc:
+            return json_response({"error": f"backup list failed: {exc}"})
+        return json_response({"backups": backups})
+
+    async def page_backup_preview_local(self):
+        await self._start()
+        payload = await request.get_json(silent=True) if hasattr(request, "get_json") else await request.json(default={})
+        backup_id = str(payload.get("backup_id", "")) if isinstance(payload, dict) else ""
+        try:
+            backup = await load_local_backup(self.backup_dir, backup_id)
+            summary = await validate_backup(self.db, backup)
+        except (ValueError, OSError, TypeError) as exc:
+            return json_response({"error": f"invalid backup: {exc}"})
+        token = secrets.token_urlsafe(32)
+        self.backup_previews[token] = (getattr(request, "username", None), time.monotonic() + 300, backup)
+        summary["exists"] = bool(await self.db.one("SELECT id FROM stories WHERE id=?", (summary["story_id"],)))
+        return json_response({"token": token, **summary, "expires_seconds": 300})
 
     async def page_backup_preview(self):
         await self._start()

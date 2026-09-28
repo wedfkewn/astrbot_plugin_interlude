@@ -165,7 +165,7 @@ function renderMaintenance(hasStory) {
   const explanation = element('div');
   explanation.append(
     element('h3', '', hasStory ? '管理当前故事' : '从备份恢复故事'),
-    element('p', '', hasStory ? '格式化会清空剧情、记忆、关系、日程与待发送任务，保留角色设定、世界设定和参与者。' : '选择 JSON 备份，可重建已删除的故事。'),
+    element('p', '', hasStory ? '格式化会清空剧情；本地备份保存在 AstrBot 服务器，恢复时选择备份时间。' : '选择服务器本地的备份时间，可重建已删除的故事。'),
   );
   const resetButton = element('button', 'danger-button', '格式化当前故事');
   resetButton.type = 'button';
@@ -206,18 +206,13 @@ function renderMaintenance(hasStory) {
   });
   const buttons = element('div', 'maintenance-actions');
   if (hasStory) buttons.append(resetButton);
-  const exportButton = element('button', '', '导出备份');
+  const exportButton = element('button', '', '创建本地备份');
   exportButton.type = 'button';
   exportButton.disabled = !hasStory;
   buttons.append(exportButton);
-  const restoreButton = element('button', '', '恢复备份');
+  const restoreButton = element('button', '', '按时间恢复');
   restoreButton.type = 'button';
   buttons.append(restoreButton);
-  const fileInput = element('input');
-  fileInput.type = 'file';
-  fileInput.accept = '.json,application/json';
-  fileInput.hidden = true;
-  fileInput.setAttribute('aria-label', '选择故事备份文件');
   const feedback = element('div', 'maintenance-feedback');
   feedback.setAttribute('aria-live', 'polite');
   const showFeedback = (text, error = false) => feedback.replaceChildren(element('p', error ? 'error-text' : '', text));
@@ -226,60 +221,71 @@ function renderMaintenance(hasStory) {
     if (!storyId) return;
     exportButton.disabled = true;
     try {
-      const backup = await bridge.apiGet('backup/export', {story_id: storyId});
-      if (backup.error) throw new Error(backup.error);
-      const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], {type: 'application/json'}));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `interlude-${storyId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)}-${Date.now()}.json`;
-      document.body.append(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 30000);
-      showFeedback(`已导出故事「${storyId}」，文件包含聊天内容，请妥善保管。`);
-    } catch (error) { showFeedback(`导出失败：${error.message}`, true); }
+      const result = await bridge.apiPost('backup/save', {story_id: storyId});
+      if (result.error) throw new Error(result.error);
+      showFeedback(`故事「${storyId}」已备份到 AstrBot 服务器 · ${dateLabel(result.backup.exported_at, true)}。`);
+    } catch (error) { showFeedback(`备份失败：${error.message}`, true); }
     finally { exportButton.disabled = false; }
   });
-  restoreButton.addEventListener('click', () => { fileInput.value = ''; fileInput.click(); });
-  fileInput.addEventListener('change', async () => {
-    const file = fileInput.files?.[0];
-    if (!file) return;
-    if (file.size > 20 * 1024 * 1024) { showFeedback('备份文件不能超过 20 MiB。', true); return; }
+  restoreButton.addEventListener('click', async () => {
     restoreButton.disabled = true;
-    showFeedback('正在检查备份…');
+    showFeedback('正在读取本地备份…');
     try {
-      const preview = await bridge.upload('backup/preview', file);
-      if (preview.error) throw new Error(preview.error);
+      const result = await bridge.apiGet('backup/list');
+      if (result.error) throw new Error(result.error);
+      if (!result.backups?.length) { showFeedback('还没有本地备份。先选择故事并点击“创建本地备份”。'); return; }
       const panel = element('div', 'confirmation backup-confirmation');
-      panel.append(
-        element('p', '', `备份故事：${preview.story_id} · 导出时间：${dateLabel(preview.exported_at)}`),
-        element('p', '', `事件 ${preview.counts.story_entries}、记忆 ${preview.counts.facts}、参与者 ${preview.counts.participants}、日程 ${preview.counts.schedules}`),
-        element('p', '', preview.exists ? '将覆盖此故事现有数据。' : '将重新创建已删除的故事。'),
-        element('p', '', '当前角色与世界设定优先；旧的未完成任务不会补发。输入 CONFIRM 确认，预览 5 分钟后失效。'),
-      );
-      const input = element('input');
-      input.setAttribute('aria-label', '输入 CONFIRM 确认恢复');
-      input.autocomplete = 'off';
-      const submit = element('button', 'danger-button', '确认恢复');
-      submit.type = 'button';
-      submit.disabled = true;
-      input.addEventListener('input', () => { submit.disabled = input.value !== 'CONFIRM'; });
-      submit.addEventListener('click', async () => {
-        if (input.value !== 'CONFIRM') return;
-        submit.disabled = true;
+      const label = element('label', '', '选择恢复时间');
+      const selected = element('select');
+      selected.setAttribute('aria-label', '选择恢复时间和故事');
+      for (const backup of result.backups) {
+        const option = element('option', '', `${dateLabel(backup.exported_at, true)} · ${backup.story_id} · ${backup.events} 条事件 · #${backup.id.slice(0, 6)}`);
+        option.value = backup.id;
+        selected.append(option);
+      }
+      label.append(selected);
+      const previewButton = element('button', '', '预览此时间点');
+      previewButton.type = 'button';
+      panel.append(label, previewButton);
+      previewButton.addEventListener('click', async () => {
+        previewButton.disabled = true;
         try {
-          const result = await bridge.apiPost('backup/restore', {
-            token: preview.token, story_id: preview.story_id, confirmation: 'CONFIRM',
+          const preview = await bridge.apiPost('backup/preview-local', {backup_id: selected.value});
+          if (preview.error) throw new Error(preview.error);
+          const confirmation = element('div', 'confirmation backup-confirmation');
+          confirmation.append(
+            element('p', '', `备份故事：${preview.story_id} · 备份时间：${dateLabel(preview.exported_at, true)}`),
+            element('p', '', `事件 ${preview.counts.story_entries}、记忆 ${preview.counts.facts}、参与者 ${preview.counts.participants}、日程 ${preview.counts.schedules}`),
+            element('p', '', preview.exists ? '将覆盖此故事现有数据。' : '将重新创建已删除的故事。'),
+            element('p', '', '当前角色与世界设定优先；旧的未完成任务不会补发。输入 CONFIRM 确认，预览 5 分钟后失效。'),
+          );
+          const input = element('input');
+          input.setAttribute('aria-label', '输入 CONFIRM 确认恢复');
+          input.autocomplete = 'off';
+          const submit = element('button', 'danger-button', '确认恢复');
+          submit.type = 'button';
+          submit.disabled = true;
+          input.addEventListener('input', () => { submit.disabled = input.value !== 'CONFIRM'; });
+          submit.addEventListener('click', async () => {
+            if (input.value !== 'CONFIRM') return;
+            submit.disabled = true;
+            try {
+              const restored = await bridge.apiPost('backup/restore', {
+                token: preview.token, story_id: preview.story_id, confirmation: 'CONFIRM',
+              });
+              if (restored.error) throw new Error(restored.error);
+              await refresh(preview.story_id);
+            } catch (error) { confirmation.append(element('p', 'error-text', `恢复失败：${error.message}。请重新选择时间点。`)); }
           });
-          if (result.error) throw new Error(result.error);
-          await refresh(preview.story_id);
-        } catch (error) { panel.append(element('p', 'error-text', `恢复失败：${error.message}。请重新选择备份文件。`)); }
+          confirmation.append(input, submit);
+          feedback.replaceChildren(confirmation);
+        } catch (error) { panel.append(element('p', 'error-text', `预览失败：${error.message}`)); previewButton.disabled = false; }
       });
       feedback.replaceChildren(panel);
-    } catch (error) { showFeedback(`备份检查失败：${error.message}`, true); }
+    } catch (error) { showFeedback(`读取备份失败：${error.message}`, true); }
     finally { restoreButton.disabled = false; }
   });
-  maintenance.append(explanation, buttons, fileInput, feedback);
+  maintenance.append(explanation, buttons, feedback);
   content.append(maintenance);
 }
 
