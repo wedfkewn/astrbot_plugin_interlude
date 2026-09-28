@@ -153,6 +153,9 @@ class OverlayCandidate(StrictModel):
 class StateUpdate(StrictModel):
     location: str = Field(default="", max_length=200)
     activity: str = Field(default="", max_length=300)
+    emotion: str = Field(default="", max_length=40)
+    emotion_intensity: int = Field(default=0, ge=0, le=5)
+    emotion_reason: str = Field(default="", max_length=200)
     privacy: str = Field(default="", max_length=200)
     device_available: bool = True
     nearby_people: list[str] = Field(default_factory=list, max_length=12)

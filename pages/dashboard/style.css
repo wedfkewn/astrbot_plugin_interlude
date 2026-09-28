@@ -61,6 +61,13 @@ h1 { margin: 0; font-size: clamp(28px, 4vw, 38px); line-height: 1.22; letter-spa
 .maintenance-panel { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 18px 20px; }
 .maintenance-panel h3 { margin: 0 0 4px; font-size: 14px; }
 .maintenance-panel p { margin: 0; color: var(--muted); font-size: 12px; }
+.maintenance-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.maintenance-actions button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-weight: 700; }
+.maintenance-actions button:hover, .maintenance-actions button:focus-visible { border-color: var(--accent); }
+.maintenance-feedback { flex-basis: 100%; }
+.maintenance-feedback:empty { display: none; }
+.backup-confirmation p { flex-basis: 100%; }
+.maintenance-feedback .error-text { color: #9b3434; }
 .maintenance-panel .danger-button { padding: 8px 12px; border: 1px solid #b55454; border-radius: 8px; color: #9b3434; background: var(--surface); font-weight: 700; }
 .maintenance-panel .danger-button:hover, .maintenance-panel .danger-button:focus-visible { background: #fff0ef; }
 .maintenance-panel button:disabled { opacity: .55; cursor: not-allowed; }
