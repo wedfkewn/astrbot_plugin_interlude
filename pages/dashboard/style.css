@@ -48,6 +48,14 @@ h1 { margin: 0; font-size: clamp(28px, 4vw, 38px); line-height: 1.22; letter-spa
 .emotion-reason { margin: 5px 0 12px; color: var(--muted); overflow-wrap: anywhere; }
 .emotion-strength { display: flex; align-items: center; gap: 14px; color: var(--muted); font-size: 12px; }
 .emotion-progress { width: min(220px, 60%); height: 10px; accent-color: var(--accent); }
+.proactive-panel { padding: 18px 22px; }
+.proactive-state { margin: 0; font-weight: 750; color: var(--accent); }
+.proactive-hint, .proactive-empty { color: var(--muted); margin: 5px 0 0; }
+.proactive-record { border-top: 1px solid var(--line); padding: 13px 0 2px; margin-top: 13px; overflow-wrap: anywhere; }
+.proactive-record p { margin: 0 0 5px; white-space: pre-wrap; }
+.proactive-record-title { font-weight: 750; }
+.proactive-record-reason { color: var(--accent); }
+.proactive-record small { color: var(--muted); }
 .status-pill { display: inline-flex; padding: 3px 9px; border-radius: 100px; background: #e6f3ec; color: #267149; font-weight: 700; }
 .status-pill.paused { background: #fff1df; color: #94611d; }
 .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }

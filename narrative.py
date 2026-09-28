@@ -183,6 +183,12 @@ class NarrativeEngine:
         if self.config.get("shared_story", False):
             system += ("共享故事中按 recent_events 的 speaker 和 participant_id 区分用户；"
                        "回复只面向 current_event 的参与者，不把其他用户说过的话归给当前用户。")
+        if mode == "PROACTIVE_CHECK":
+            system += ("这是用户静默一段时间后的主动联系评估，不是用户的新消息。"
+                       "结合最近对话、真实日程、关系和角色状态判断是否值得联系；没有自然缘由就不要创建意图。"
+                       "如要联系，只生成一个 type=proactive 的 intent，participant_id 指向当前参与者，"
+                       "reason 用简短中文说明触发缘由，content 是实际要发送的话，due_at 设为当前时间或合理的未来时间，"
+                       "willingness 表示联系意愿。interaction.reply.mode 必须为 none，不得立即回复。")
         if self.worldbook and self.config.get("worldbook_enabled", False):
             system = await self.worldbook.apply(event, context["participant"], system)
         prompt = json.dumps({"mode": mode, "context": context, "schema": NarrativeResult.model_json_schema()}, ensure_ascii=False)

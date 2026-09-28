@@ -152,15 +152,28 @@ class EventRouter:
             expected_generation = event.metadata.get("generation_id")
             if expected_generation and expected_generation != generation_id:
                 return False
+            if event.event_type == EventType.PROACTIVE_CHECK:
+                participant = await self.db.one("SELECT last_interaction_at FROM participants WHERE id=?", (event.participant_id,))
+                if not participant or participant["last_interaction_at"] != event.metadata.get("last_user_at"):
+                    return False
             await self.db.append_event(event)
             mode = {EventType.FOLLOW_UP: "FOLLOW_UP", EventType.INTENT_DUE: "INTENT_DUE",
                     EventType.AUTO_ADVANCE: "LIFE_ADVANCE",
+                    EventType.PROACTIVE_CHECK: "PROACTIVE_CHECK",
                     EventType.SCHEDULE_BOUNDARY: "LIFE_ADVANCE"}.get(event.event_type, "USER_EVENT")
             try:
                 self.log("CONTEXT", f"building {mode}")
                 result = await self.engine.run(event, mode)
                 self.log("NARRATIVE", f"validated; beats={len(result.story)} intents={len(result.intents)}")
                 reply = result.interaction.reply
+                if event.event_type == EventType.PROACTIVE_CHECK:
+                    result.interaction.reply.mode = "none"
+                    result.interaction.reply.messages = []
+                    result.intents = [intent for intent in result.intents
+                                      if intent.type == "proactive" and
+                                      (not intent.participant_id or intent.participant_id == event.participant_id)][:1]
+                    for intent in result.intents:
+                        intent.reason = "静默触发 · " + (intent.reason.strip() or "结合最近对话与故事状态决定联系")
                 if result.interaction.seen and reply.mode == "delayed" and reply.messages and event.participant_id:
                     try:
                         due = datetime.fromisoformat(reply.send_at).astimezone(timezone.utc).isoformat() if reply.send_at else ""
@@ -183,6 +196,10 @@ class EventRouter:
                 await self.db.commit_narrative(event.story_id, event, result, generation_id, now_iso())
                 self.log("STATE", "narrative committed")
             except Exception:  # noqa: BLE001 - provider failures become durable retries
+                if event.event_type == EventType.PROACTIVE_CHECK:
+                    participant = await self.db.one("SELECT last_interaction_at FROM participants WHERE id=?", (event.participant_id,))
+                    if not participant or participant["last_interaction_at"] != event.metadata.get("last_user_at"):
+                        return False
                 if expected_generation and not await self.db.generation_valid(event.story_id, expected_generation):
                     self.log("NARRATIVE", "stale generation discarded")
                     return False
@@ -311,6 +328,7 @@ class RuntimeScheduler:
             except Exception:  # noqa: BLE001 - retry on a later poll
                 await self.db.execute("UPDATE runtime_jobs SET status='pending',due_at=? WHERE id=?",
                                       ((datetime.now(timezone.utc)+timedelta(minutes=1)).isoformat(), job["id"]))
+        await self._consider_idle_chats()
         if self.config.get("auto_advance_enabled", True):
             cutoff = (datetime.now(timezone.utc) - timedelta(minutes=int(self.config.get("auto_advance_minutes", 60)))).isoformat()
             for story in await self.db.all("SELECT id FROM stories WHERE cursor<? AND paused=0", (cutoff,)):
@@ -332,6 +350,32 @@ class RuntimeScheduler:
                     await self.refresh_schedule(story["id"])
                 except Exception as exc:  # noqa: BLE001 - next maintenance window retries
                     self.last_error = type(exc).__name__
+
+    async def _consider_idle_chats(self) -> None:
+        if not (self.config.get("enabled", True) and self.config.get("proactive_enabled", False)
+                and self.config.get("proactive_idle_enabled", False)):
+            return
+        whitelist = {x.strip() for x in str(self.config.get("proactive_whitelist", "")).split(",") if x.strip()}
+        if not whitelist:
+            return
+        cutoff = (datetime.now(timezone.utc) - timedelta(
+            minutes=max(30, int(self.config.get("proactive_idle_minutes", 1200))))).isoformat()
+        user_ids = sorted(whitelist)
+        placeholders = ",".join("?" for _ in user_ids)
+        participants = await self.db.all(
+            "SELECT p.id,p.story_id,p.platform_user_id,p.last_interaction_at FROM participants p "
+            "JOIN stories s ON s.id=p.story_id WHERE p.enabled=1 AND s.paused=0 "
+            f"AND p.platform_user_id IN ({placeholders}) "
+            "AND p.last_interaction_at IS NOT NULL AND p.last_interaction_at<=? "
+            "AND NOT EXISTS (SELECT 1 FROM story_entries e WHERE e.participant_id=p.id "
+            "AND e.event_type='PROACTIVE_CHECK' AND e.occurred_at>=p.last_interaction_at) "
+            "ORDER BY p.last_interaction_at LIMIT 20", (*user_ids, cutoff))
+        for participant in participants:
+            await self.router.route(StoryEvent(
+                participant["story_id"], EventType.PROACTIVE_CHECK,
+                "距离这位用户上次发消息已经过了一段时间。请判断是否有自然的主动联系缘由。",
+                participant["id"], metadata={"last_user_at": participant["last_interaction_at"]},
+            ))
 
     async def _process_intent(self, intent) -> None:
         await self.db.mark_intent(intent["id"], "processing")
@@ -409,10 +453,14 @@ class RuntimeScheduler:
     async def _proactive_allowed(self, intent, participant) -> bool:
         if not self.config.get("proactive_enabled", False) or not participant or not participant["enabled"]:
             return False
+        if intent["reason"].startswith("静默触发 · ") and not self.config.get("proactive_idle_enabled", False):
+            return False
         whitelist = {x.strip() for x in str(self.config.get("proactive_whitelist", "")).split(",") if x.strip()}
         if participant["platform_user_id"] not in whitelist:
             return False
         if intent["willingness"] < float(self.config.get("proactive_willingness_threshold", 0.8)):
+            return False
+        if intent["reason"].startswith("静默触发 · ") and participant["last_interaction_at"] and participant["last_interaction_at"] > intent["created_at"]:
             return False
         agency = await AgencyService(self.db).evaluate(intent["story_id"])
         if not agency["proactive_allowed"]:

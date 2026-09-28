@@ -49,6 +49,8 @@
   "delivery_retry_attempts": {"description": "Delivery · 失败重试次数", "type": "int", "default": 0},
   "delivery_retry_minutes": {"description": "Delivery · 重试间隔分钟", "type": "int", "default": 2},
   "proactive_enabled": {"description": "Proactive · 主动消息", "type": "bool", "default": false},
+  "proactive_idle_enabled": {"description": "Proactive · 静默后主动聊天（需同时开启主动消息）", "type": "bool", "default": false},
+  "proactive_idle_minutes": {"description": "Proactive · 静默触发分钟数（最低 30）", "type": "int", "default": 1200},
   "proactive_whitelist": {"description": "Proactive · 平台用户 ID 白名单，逗号分隔", "type": "string", "default": ""},
   "proactive_willingness_threshold": {"description": "Proactive · 意愿阈值", "type": "float", "default": 0.8},
   "proactive_daily_limit": {"description": "Proactive · 每用户每日上限", "type": "int", "default": 2},
